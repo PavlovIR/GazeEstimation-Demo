@@ -1,0 +1,20 @@
+[camera_offset]
+# The physical translation from the exact center of the monitor to the camera lens.
+# Units: millimeters (mm)
+# X: Positive is right, negative is left. (0.0 means perfectly centered horizontally)
+x_mm = 0.0
+# Y: Positive is UP. (e.g., 150.0 means the camera is 15cm above the screen center)
+y_mm = 130.0
+# Z: Positive is protruding forward towards the user.
+z_mm = 0.0
+
+[screen]
+# The pixel resolution of the active display
+res_width = 2560
+res_height = 1600
+
+# The physical dimensions of the active display area (NOT the bezels)
+# Units: millimeters (mm)
+# Example values for a standard 24-inch monitor:
+phys_width_mm = 340
+phys_height_mm = 230

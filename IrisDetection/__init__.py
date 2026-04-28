@@ -18,6 +18,8 @@ MEDIAPIPE_MODEL_URL = (
 
 EYE_REGION_A = np.asarray([33, 133, 160, 159, 158, 157, 173, 246, 161, 144, 145, 153, 154, 155])
 EYE_REGION_B = np.asarray([263, 362, 387, 386, 385, 384, 398, 466, 388, 390, 373, 374, 380, 381, 382])
+LEFT_IRIS_REGION = np.asarray([468, 469, 470, 471, 472])
+RIGHT_IRIS_REGION = np.asarray([473, 474, 475, 476, 477])
 
 
 @dataclass(slots=True)
@@ -150,6 +152,19 @@ def _project_box_from_crop(box: BoundingBox, crop_box: BoundingBox, crop_size: i
     )
 
 
+def _project_points_to_crop(points: np.ndarray, crop_box: BoundingBox, crop_size: int) -> np.ndarray:
+    scale_x = crop_size / max(crop_box.width, 1.0)
+    scale_y = crop_size / max(crop_box.height, 1.0)
+    projected = np.empty_like(points, dtype=np.float32)
+    projected[:, 0] = (points[:, 0] - crop_box.x) * scale_x
+    projected[:, 1] = (points[:, 1] - crop_box.y) * scale_y
+    if points.shape[1] > 2:
+        projected[:, 2:] = points[:, 2:]
+    projected[:, 0] = np.clip(projected[:, 0], 0.0, float(crop_size - 1))
+    projected[:, 1] = np.clip(projected[:, 1], 0.0, float(crop_size - 1))
+    return projected
+
+
 def _rasterize_box_to_grid(
     box: BoundingBox,
     canvas_width: int,
@@ -219,6 +234,7 @@ class Detector:
         self._face_detector = None
         self._mp = None
         self._iris_model = None
+        self._use_mediapipe_iris = False
 
         if self.iris_data_dir is not None:
             os.environ["IRISLIBS_DATA_DIR"] = str(self.iris_data_dir)
@@ -320,6 +336,31 @@ class Detector:
             is_left=is_left,
         )
 
+    def _predict_iris_or_use_mediapipe(
+        self,
+        eye_crop: np.ndarray,
+        eye_box: BoundingBox,
+        landmarks_result: FaceLandmarksResult,
+        is_left: bool,
+    ) -> np.ndarray:
+        if not self._use_mediapipe_iris:
+            try:
+                return self.predict_iris(eye_crop, is_left=is_left)
+            except RuntimeError:
+                self._use_mediapipe_iris = True
+
+        iris_indices = LEFT_IRIS_REGION if is_left else RIGHT_IRIS_REGION
+        if landmarks_result.landmarks.shape[0] <= int(np.max(iris_indices)):
+            try:
+                return self.predict_iris(eye_crop, is_left=is_left)
+            except RuntimeError:
+                raise
+        return _project_points_to_crop(
+            landmarks_result.landmarks[iris_indices],
+            crop_box=eye_box,
+            crop_size=self.eye_crop_size,
+        )
+
     @staticmethod
     def _split_eye_regions(landmarks_result: FaceLandmarksResult) -> tuple[np.ndarray, np.ndarray]:
         eye_region_a, eye_region_b = landmarks_result.eye_regions
@@ -365,8 +406,18 @@ class Detector:
         left_eye_crop = _crop_image(image, left_eye_box, size=self.eye_crop_size)
         right_eye_crop = _crop_image(image, right_eye_box, size=self.eye_crop_size)
 
-        left_iris_landmarks = self.predict_iris(left_eye_crop, is_left=True)
-        right_iris_landmarks = self.predict_iris(right_eye_crop, is_left=False)
+        left_iris_landmarks = self._predict_iris_or_use_mediapipe(
+            left_eye_crop,
+            eye_box=left_eye_box,
+            landmarks_result=detection,
+            is_left=True,
+        )
+        right_iris_landmarks = self._predict_iris_or_use_mediapipe(
+            right_eye_crop,
+            eye_box=right_eye_box,
+            landmarks_result=detection,
+            is_left=False,
+        )
 
         left_iris_box_eye = _box_from_landmarks(left_iris_landmarks[:, :2])
         right_iris_box_eye = _box_from_landmarks(right_iris_landmarks[:, :2])

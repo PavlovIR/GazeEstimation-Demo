@@ -96,7 +96,7 @@ class GazeAccuracyUI:
         self.target_mm = self.screen_cfg._px_to_mm(x, y)
         self.last_target_ts = time.time()
 
-    def _draw(self, pred_px, error_mm, avg_error):
+    def _draw(self, pred_px, error_mm, avg_error, status=None):
         pygame = self.pygame
         self.screen.fill((10, 10, 10))
         pygame.draw.circle(self.screen, (80, 180, 255), self.target_px, 20)
@@ -110,6 +110,8 @@ class GazeAccuracyUI:
             pygame.draw.circle(self.screen, (255, 90, 90), pred_px, 15)
             pygame.draw.line(self.screen, (180, 180, 180), self.target_px, pred_px, 1)
             lines.append(f"Pred (px): {pred_px[0]}, {pred_px[1]}")
+        elif status:
+            lines.append(status)
 
         if error_mm is not None:
             lines.append(f"Last error: {error_mm:.2f} mm")
@@ -153,6 +155,41 @@ class GazeAccuracyUI:
                 self._new_target()
 
         self._draw(pred_px, error_mm, avg_error)
+        self.clock.tick(60)
+        return error_mm, avg_error, self.running
+
+    def update_px(self, predicted_px, status=None):
+        pygame = self.pygame
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
+                self.running = False
+
+        pred_px = None
+        error_mm = None
+        avg_error = None
+        if predicted_px is not None:
+            x_px, y_px = float(predicted_px[0]), float(predicted_px[1])
+            pred_px = (
+                int(np.clip(round(x_px), 0, self.screen_cfg.width_px - 1)),
+                int(np.clip(round(y_px), 0, self.screen_cfg.height_px - 1)),
+            )
+            predicted_mm = self.screen_cfg._px_to_mm(*pred_px)
+            error_mm = float(
+                np.linalg.norm(np.array(predicted_mm) - np.array(self.target_mm))
+            )
+            self.errors_mm.append(error_mm)
+            avg_error = float(np.mean(self.errors_mm))
+
+        now = time.time()
+        if now - self.last_target_ts > self.hold_seconds:
+            if self.points and self.completed_cycles >= self.total_cycles:
+                self.running = False
+            elif self.running:
+                self._new_target()
+
+        self._draw(pred_px, error_mm, avg_error, status=status)
         self.clock.tick(60)
         return error_mm, avg_error, self.running
 
