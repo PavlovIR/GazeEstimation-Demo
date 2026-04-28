@@ -1,0 +1,25 @@
+[project]
+name = "ann-ui"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mediapipe>=0.10.35",
+    "pygame>=2.6.1",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.10",
+    "scipy>=1.17",
+    "torch>=2.7.0",
+    "torchvision>=0.22.0",
+    "tqdm>=4.66",
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
