@@ -10,8 +10,9 @@ from calibration import (
     FaceDistanceTracker,
 )
 from gaze_ui.AccuracyUi import GazeAccuracyUI
+from gaze_ui.accuracy_logger import AccuracyLogger
 from gaze_ui.Screen import Screen
-from GazeEstimation import Estimator as GazeEstimator
+from GazeEstimation import EstimationResult, Estimator as GazeEstimator
 from IrisDetection import Detector as IrisDetector
 
 ROOT = Path(__file__).resolve().parent
@@ -20,6 +21,7 @@ DEFAULT_IRIS_DATA_DIR = ROOT / "IrisDetection" / "data"
 DEFAULT_CONFIG = ROOT / "config.toml"
 DEFAULT_POINTS = ROOT / "points.csv"
 DEFAULT_CALIBRATION = DEFAULT_CALIBRATION_PATH
+DEFAULT_LOG_DIR = ROOT / "accuracy_runs"
 
 
 def _optional_path(path: Path) -> Path | None:
@@ -76,6 +78,34 @@ def _load_calibration() -> DistanceAwareCalibration | None:
     return calibration
 
 
+def _face_bbox_xyxy(result: EstimationResult | None) -> tuple[float, float, float, float] | None:
+    if result is None:
+        return None
+    box = result.detection.face_box
+    return box.x, box.y, box.x2, box.y2
+
+
+def _px_to_cm(screen: Screen, predicted_px) -> tuple[float, float] | None:
+    if predicted_px is None:
+        return None
+    x_mm, y_mm = screen._px_to_mm(float(predicted_px[0]), float(predicted_px[1]))
+    return float(x_mm) / 10.0, float(y_mm) / 10.0
+
+
+def _target_cm(accuracy_ui: GazeAccuracyUI | None) -> tuple[float, float] | None:
+    if accuracy_ui is None or accuracy_ui.target_mm is None:
+        return None
+    return float(accuracy_ui.target_mm[0]) / 10.0, float(accuracy_ui.target_mm[1]) / 10.0
+
+
+def _error_deg(error_mm: float | None, face_distance_mm: float | None) -> float | None:
+    if error_mm is None or face_distance_mm is None or face_distance_mm <= 0.0:
+        return None
+    import math
+
+    return math.degrees(math.atan(float(error_mm) / float(face_distance_mm)))
+
+
 def main() -> None:
     screen, accuracy_ui = _build_accuracy_ui()
     screen_size = (screen.width_px, screen.height_px) if screen is not None else None
@@ -86,6 +116,17 @@ def main() -> None:
     show_camera_window = accuracy_ui is None and _opencv_has_gui()
     distance_tracker = None
     distance_tracker_failed = False
+    logger = (
+        AccuracyLogger(
+            str(DEFAULT_LOG_DIR),
+            screen,
+            calibration_path=str(DEFAULT_CALIBRATION) if DEFAULT_CALIBRATION.exists() else None,
+        )
+        if screen is not None and accuracy_ui is not None
+        else None
+    )
+    if logger is not None:
+        print(f"Logging accuracy run to {logger.run_dir}.")
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -129,6 +170,8 @@ def main() -> None:
 
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             predicted_px = None
+            result = None
+            face_distance_mm = None
             status = "No gaze prediction yet."
 
             try:
@@ -148,7 +191,19 @@ def main() -> None:
                 print(status, end="\r")
 
             if accuracy_ui is not None:
-                _, _, still_running = accuracy_ui.update_px(predicted_px, status=status)
+                target_px = accuracy_ui.target_px
+                target_cm = _target_cm(accuracy_ui)
+                error_mm, _, still_running = accuracy_ui.update_px(predicted_px, status=status)
+                if logger is not None:
+                    logger.log(
+                        frame=frame,
+                        face_bbox=_face_bbox_xyxy(result),
+                        gaze_cm=_px_to_cm(screen, predicted_px),
+                        target_cm=target_cm,
+                        target_px=target_px,
+                        error_cm=(float(error_mm) / 10.0) if error_mm is not None else None,
+                        error_deg=_error_deg(error_mm, face_distance_mm),
+                    )
                 if not still_running:
                     break
             else:
@@ -175,6 +230,8 @@ def main() -> None:
     finally:
         if accuracy_ui is not None:
             accuracy_ui.close()
+        if logger is not None:
+            logger.close()
         cap.release()
         if show_camera_window:
             cv2.destroyAllWindows()
