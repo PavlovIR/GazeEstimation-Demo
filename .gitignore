@@ -12,5 +12,9 @@ wheels/
 # Runtime logs
 accuracy_runs/
 
+# Model weights
+GazeEstimation/weights/*
+!GazeEstimation/weights/README.md
+
 # Other
 calibration.json
