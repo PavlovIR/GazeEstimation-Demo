@@ -1,4 +1,19 @@
+import ctypes
+import platform
 import time
+
+
+def set_dpi_awareness():
+    if platform.system() == "Windows":
+        # Windows 8.1 and 10+ (Per-Monitor DPI awareness)
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            # Windows Vista, 7, and 8
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass  # Fallback for older systems
 
 
 class GazeDemoUI:
@@ -20,6 +35,7 @@ class GazeDemoUI:
             ) from exc
 
         self.pygame = pygame
+        set_dpi_awareness()
         pygame.init()
 
         self.screen_cfg = screen
@@ -81,7 +97,7 @@ class GazeDemoUI:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
                 self.running = False
 
         gaze_px = None

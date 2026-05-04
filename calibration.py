@@ -17,14 +17,14 @@ from face_pos.detector import FaceDetector
 from face_pos.estimator import DistanceEstimator
 from gaze_ui.AccuracyUi import set_dpi_awareness
 from gaze_ui.Screen import Screen
-from GazeEstimation import EstimationResult, Estimator as GazeEstimator
+from GazeEstimation import EstimationResult
+from GazeEstimation import Estimator as GazeEstimator
 from IrisDetection import Detector as IrisDetector
-
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_CALIBRATION_PATH = ROOT / "calibration.json"
 DEFAULT_CONFIG_PATH = ROOT / "config.toml"
-DEFAULT_POINTS_PATH = ROOT / "points.csv"
+DEFAULT_POINTS_PATH = ROOT / "calibration-points.csv"
 DEFAULT_MEDIAPIPE_MODEL = ROOT / "models" / "face_landmarker_v2_with_blendshapes.task"
 DEFAULT_IRIS_DATA_DIR = ROOT / "IrisDetection" / "data"
 
@@ -49,7 +49,9 @@ class CalibrationStage:
 
 DEFAULT_STAGES: tuple[CalibrationStage, ...] = (
     CalibrationStage("near", "Move closer to the camera, then press SPACE."),
-    CalibrationStage("normal", "Move to your normal working distance, then press SPACE."),
+    CalibrationStage(
+        "normal", "Move to your normal working distance, then press SPACE."
+    ),
     CalibrationStage("far", "Move farther from the camera, then press SPACE."),
 )
 
@@ -135,8 +137,12 @@ class DistanceAwareCalibration:
             raise ValueError("At least three calibration samples are required.")
 
         global_matrix = _fit_affine(
-            predicted_points=np.asarray([sample.raw_xy for sample in samples], dtype=np.float32),
-            screen_points=np.asarray([sample.target_xy for sample in samples], dtype=np.float32),
+            predicted_points=np.asarray(
+                [sample.raw_xy for sample in samples], dtype=np.float32
+            ),
+            screen_points=np.asarray(
+                [sample.target_xy for sample in samples], dtype=np.float32
+            ),
         )
 
         bins: list[DistanceCalibrationBin] = []
@@ -146,13 +152,19 @@ class DistanceAwareCalibration:
                 continue
 
             matrix = _fit_affine(
-                predicted_points=np.asarray([sample.raw_xy for sample in stage_samples], dtype=np.float32),
-                screen_points=np.asarray([sample.target_xy for sample in stage_samples], dtype=np.float32),
+                predicted_points=np.asarray(
+                    [sample.raw_xy for sample in stage_samples], dtype=np.float32
+                ),
+                screen_points=np.asarray(
+                    [sample.target_xy for sample in stage_samples], dtype=np.float32
+                ),
             )
             bins.append(
                 DistanceCalibrationBin(
                     stage=stage,
-                    distance_mm=float(np.median([sample.face_distance_mm for sample in stage_samples])),
+                    distance_mm=float(
+                        np.median([sample.face_distance_mm for sample in stage_samples])
+                    ),
                     matrix=matrix,
                     sample_count=len(stage_samples),
                 )
@@ -162,7 +174,9 @@ class DistanceAwareCalibration:
             bins.append(
                 DistanceCalibrationBin(
                     stage="global",
-                    distance_mm=float(np.median([sample.face_distance_mm for sample in samples])),
+                    distance_mm=float(
+                        np.median([sample.face_distance_mm for sample in samples])
+                    ),
                     matrix=global_matrix,
                     sample_count=len(samples),
                 )
@@ -183,7 +197,11 @@ class DistanceAwareCalibration:
         face_distance_mm: float | None,
         clamp_to_screen: bool = True,
     ) -> np.ndarray:
-        if not self.bins or face_distance_mm is None or not np.isfinite(face_distance_mm):
+        if (
+            not self.bins
+            or face_distance_mm is None
+            or not np.isfinite(face_distance_mm)
+        ):
             calibrated = self._apply_matrix(self.global_matrix, raw_xy)
         else:
             calibrated = self._apply_distance_bins(raw_xy, float(face_distance_mm))
@@ -192,7 +210,9 @@ class DistanceAwareCalibration:
             calibrated = _clamp_xy(calibrated, self.screen_size)
         return calibrated.astype(np.float32)
 
-    def _apply_distance_bins(self, raw_xy: np.ndarray, face_distance_mm: float) -> np.ndarray:
+    def _apply_distance_bins(
+        self, raw_xy: np.ndarray, face_distance_mm: float
+    ) -> np.ndarray:
         if len(self.bins) == 1:
             return self.bins[0].apply(raw_xy)
 
@@ -238,13 +258,20 @@ class DistanceAwareCalibration:
         if global_matrix.shape != (2, 3):
             raise ValueError("global_matrix must have shape 2x3.")
 
-        bins = [DistanceCalibrationBin.from_json(item) for item in payload["distance_bins"]]
+        bins = [
+            DistanceCalibrationBin.from_json(item) for item in payload["distance_bins"]
+        ]
         bins.sort(key=lambda item: item.distance_mm)
         return cls(
-            screen_size=(int(payload["screen_size"][0]), int(payload["screen_size"][1])),
+            screen_size=(
+                int(payload["screen_size"][0]),
+                int(payload["screen_size"][1]),
+            ),
             bins=bins,
             global_matrix=global_matrix,
-            samples=[CalibrationSample.from_json(item) for item in payload.get("samples", [])],
+            samples=[
+                CalibrationSample.from_json(item) for item in payload.get("samples", [])
+            ],
             created_at=str(payload.get("created_at", "")),
         )
 
@@ -276,7 +303,9 @@ class CalibrationWindow:
         try:
             import pygame
         except ImportError as exc:
-            raise SystemExit("pygame is required for calibration. Install with `pip install pygame`.") from exc
+            raise SystemExit(
+                "pygame is required for calibration. Install with `pip install pygame`."
+            ) from exc
 
         self.pygame = pygame
         self.screen_cfg = screen
@@ -289,6 +318,8 @@ class CalibrationWindow:
         self.small_font = pygame.font.SysFont("monospace", 18)
         self.clock = pygame.time.Clock()
         self.running = True
+        self._display_target_xy: np.ndarray | None = None
+        self._last_tick = time.monotonic()
 
     def poll_action(self) -> str | None:
         for event in self.pygame.event.get():
@@ -308,19 +339,34 @@ class CalibrationWindow:
         title: str,
         lines: Sequence[str],
         target_xy: tuple[int, int] | None = None,
-        prediction_xy: np.ndarray | None = None,
         progress: float | None = None,
     ) -> None:
         pygame = self.pygame
+        now = time.monotonic()
+        dt = min(max(now - self._last_tick, 0.0), 0.05)
+        self._last_tick = now
         self.surface.fill((12, 12, 12))
 
         if target_xy is not None:
-            pygame.draw.circle(self.surface, (80, 180, 255), target_xy, 22)
-            pygame.draw.circle(self.surface, (230, 245, 255), target_xy, 5)
+            target = np.asarray(target_xy, dtype=np.float32)
+            if self._display_target_xy is None:
+                self._display_target_xy = target
+            else:
+                step = min(1.0, dt * 8.0)
+                self._display_target_xy = self._display_target_xy + (
+                    (target - self._display_target_xy) * step
+                )
 
-        if prediction_xy is not None:
-            pred = tuple(int(v) for v in _clamp_xy(prediction_xy, (self.screen_cfg.width_px, self.screen_cfg.height_px)))
-            pygame.draw.circle(self.surface, (255, 90, 90), pred, 11)
+            draw_target = tuple(int(round(v)) for v in self._display_target_xy)
+            pulse = (np.sin(now * 7.5) + 1.0) * 0.5
+            radius = int(round(19 + (pulse * 8)))
+            pygame.draw.circle(
+                self.surface, (40, 95, 130), draw_target, radius + 10, width=2
+            )
+            pygame.draw.circle(self.surface, (80, 180, 255), draw_target, radius)
+            pygame.draw.circle(self.surface, (230, 245, 255), draw_target, 5)
+        else:
+            self._display_target_xy = None
 
         y = 28
         self._draw_line(title, x=32, y=y, font=self.title_font, color=(245, 245, 245))
@@ -333,7 +379,9 @@ class CalibrationWindow:
             bar_x = 32
             bar_y = self.screen_cfg.height_px - 52
             bar_w = self.screen_cfg.width_px - 64
-            pygame.draw.rect(self.surface, (50, 50, 50), (bar_x, bar_y, bar_w, 18), border_radius=9)
+            pygame.draw.rect(
+                self.surface, (50, 50, 50), (bar_x, bar_y, bar_w, 18), border_radius=9
+            )
             pygame.draw.rect(
                 self.surface,
                 (80, 180, 255),
@@ -344,7 +392,9 @@ class CalibrationWindow:
         pygame.display.flip()
         self.clock.tick(60)
 
-    def _draw_line(self, text: str, x: int, y: int, font: Any, color: tuple[int, int, int]) -> None:
+    def _draw_line(
+        self, text: str, x: int, y: int, font: Any, color: tuple[int, int, int]
+    ) -> None:
         surf = font.render(text, True, color)
         self.surface.blit(surf, (x, y))
 
@@ -410,7 +460,9 @@ class AdvancedCalibrationPipeline:
 
         try:
             for stage_index, stage in enumerate(self.stages, start=1):
-                self._wait_for_stage_start(cap, ui, distance_tracker, stage, stage_index)
+                self._wait_for_stage_start(
+                    cap, ui, distance_tracker, stage, stage_index
+                )
                 for point_index, target_xy in enumerate(self.target_points, start=1):
                     sample = None
                     while sample is None:
@@ -485,7 +537,6 @@ class AdvancedCalibrationPipeline:
         started_at = time.monotonic()
         raw_samples: list[np.ndarray] = []
         distance_samples: list[float] = []
-        last_prediction: np.ndarray | None = None
         last_distance: float | None = None
         last_status = "Hold your gaze on the blue dot."
 
@@ -510,7 +561,6 @@ class AdvancedCalibrationPipeline:
                 result = self.gaze_estimator.predict(rgb_frame, return_details=True)
                 if not isinstance(result, EstimationResult):
                     raise RuntimeError("Estimator did not return detailed output.")
-                last_prediction = result.raw_xy
                 if elapsed >= self.settle_seconds and last_distance is not None:
                     raw_samples.append(result.raw_xy.astype(np.float32))
                     distance_samples.append(float(last_distance))
@@ -520,7 +570,6 @@ class AdvancedCalibrationPipeline:
                 else:
                     last_status = "Face distance unavailable."
             except (RuntimeError, ValueError) as exc:
-                last_prediction = None
                 last_status = f"Gaze unavailable: {exc}"
 
             ui.draw(
@@ -531,7 +580,6 @@ class AdvancedCalibrationPipeline:
                     last_status,
                 ],
                 target_xy=target_xy,
-                prediction_xy=last_prediction,
                 progress=elapsed / total_seconds,
             )
 
@@ -542,12 +590,16 @@ class AdvancedCalibrationPipeline:
             stage=stage.name,
             point_index=point_index,
             target_xy=np.asarray(target_xy, dtype=np.float32),
-            raw_xy=np.median(np.asarray(raw_samples, dtype=np.float32), axis=0).astype(np.float32),
+            raw_xy=np.median(np.asarray(raw_samples, dtype=np.float32), axis=0).astype(
+                np.float32
+            ),
             face_distance_mm=float(np.median(distance_samples)),
             frame_count=len(raw_samples),
         )
 
-    def _show_message(self, ui: CalibrationWindow, title: str, lines: Sequence[str]) -> None:
+    def _show_message(
+        self, ui: CalibrationWindow, title: str, lines: Sequence[str]
+    ) -> None:
         while ui.running:
             action = ui.poll_action()
             if action == "quit":
@@ -566,7 +618,9 @@ def build_gaze_estimator(
 ) -> GazeEstimator:
     iris_detector = IrisDetector(
         mediapipe_model_path=_optional_path(Path(mediapipe_model_path)),
-        iris_data_dir=_optional_path(Path(iris_data_dir)) if iris_data_dir is not None else None,
+        iris_data_dir=_optional_path(Path(iris_data_dir))
+        if iris_data_dir is not None
+        else None,
         device=iris_device,
     )
     return GazeEstimator(
@@ -576,7 +630,9 @@ def build_gaze_estimator(
     )
 
 
-def load_target_points(screen: Screen, points_path: str | Path | None = DEFAULT_POINTS_PATH) -> list[tuple[int, int]]:
+def load_target_points(
+    screen: Screen, points_path: str | Path | None = DEFAULT_POINTS_PATH
+) -> list[tuple[int, int]]:
     points: list[tuple[float, float]] = []
     if points_path is not None and Path(points_path).exists():
         with Path(points_path).open("r", newline="", encoding="utf-8") as file:
@@ -609,9 +665,13 @@ def _fit_affine(predicted_points: np.ndarray, screen_points: np.ndarray) -> np.n
     if target.shape != predicted.shape:
         raise ValueError("screen_points must have the same shape as predicted_points.")
     if predicted.shape[0] < 3:
-        raise ValueError("At least three point pairs are required for affine calibration.")
+        raise ValueError(
+            "At least three point pairs are required for affine calibration."
+        )
 
-    design = np.concatenate([predicted, np.ones((predicted.shape[0], 1), dtype=np.float32)], axis=1)
+    design = np.concatenate(
+        [predicted, np.ones((predicted.shape[0], 1), dtype=np.float32)], axis=1
+    )
     matrix_t, *_ = np.linalg.lstsq(design, target, rcond=None)
     return matrix_t.T.astype(np.float32)
 
@@ -638,19 +698,58 @@ def _format_distance(distance_mm: float | None) -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Collect distance-aware ANN gaze calibration.")
-    parser.add_argument("--screen-config", default=str(DEFAULT_CONFIG_PATH), help="Path to config.toml.")
-    parser.add_argument("--output", default=str(DEFAULT_CALIBRATION_PATH), help="Calibration JSON output path.")
-    parser.add_argument("--points", default=str(DEFAULT_POINTS_PATH), help="CSV containing x,y target points.")
+    parser = argparse.ArgumentParser(
+        description="Collect distance-aware ANN gaze calibration."
+    )
+    parser.add_argument(
+        "--screen-config", default=str(DEFAULT_CONFIG_PATH), help="Path to config.toml."
+    )
+    parser.add_argument(
+        "--output",
+        default=str(DEFAULT_CALIBRATION_PATH),
+        help="Calibration JSON output path.",
+    )
+    parser.add_argument(
+        "--points",
+        default=str(DEFAULT_POINTS_PATH),
+        help="CSV containing x,y target points.",
+    )
     parser.add_argument("--camera", type=int, default=0, help="Webcam index.")
-    parser.add_argument("--fov-degrees", type=float, default=60.0, help="Approximate webcam horizontal FOV.")
-    parser.add_argument("--settle-seconds", type=float, default=0.6, help="Delay before sampling each target.")
-    parser.add_argument("--sample-seconds", type=float, default=1.2, help="Sampling duration per target.")
-    parser.add_argument("--min-frames", type=int, default=4, help="Minimum valid frames per target.")
-    parser.add_argument("--device", default="auto", help="ANN model device: auto, cpu, cuda, etc.")
+    parser.add_argument(
+        "--fov-degrees",
+        type=float,
+        default=60.0,
+        help="Approximate webcam horizontal FOV.",
+    )
+    parser.add_argument(
+        "--settle-seconds",
+        type=float,
+        default=0.6,
+        help="Delay before sampling each target.",
+    )
+    parser.add_argument(
+        "--sample-seconds",
+        type=float,
+        default=1.2,
+        help="Sampling duration per target.",
+    )
+    parser.add_argument(
+        "--min-frames", type=int, default=4, help="Minimum valid frames per target."
+    )
+    parser.add_argument(
+        "--device", default="auto", help="ANN model device: auto, cpu, cuda, etc."
+    )
     parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
-    parser.add_argument("--mediapipe-model", default=str(DEFAULT_MEDIAPIPE_MODEL), help="Face landmarker model path.")
-    parser.add_argument("--iris-data-dir", default=str(DEFAULT_IRIS_DATA_DIR), help="Iris data directory.")
+    parser.add_argument(
+        "--mediapipe-model",
+        default=str(DEFAULT_MEDIAPIPE_MODEL),
+        help="Face landmarker model path.",
+    )
+    parser.add_argument(
+        "--iris-data-dir",
+        default=str(DEFAULT_IRIS_DATA_DIR),
+        help="Iris data directory.",
+    )
     return parser.parse_args()
 
 
