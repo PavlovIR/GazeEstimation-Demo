@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -12,6 +12,44 @@ from torchvision.models import resnet18
 from IrisDetection import DetectionResult, Detector
 
 
+_SUPPORTED_ACTIVATION_FUNCTIONS = ("relu", "leaky_relu")
+
+
+def _normalize_activation_function(activation_function: str) -> str:
+    normalized = activation_function.strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "relu": "relu",
+        "leakyrelu": "leaky_relu",
+        "leaky_relu": "leaky_relu",
+    }
+    if normalized in aliases:
+        return aliases[normalized]
+    raise ValueError(
+        f"Unsupported activation_function={activation_function!r}. "
+        f"Use one of: {', '.join(_SUPPORTED_ACTIVATION_FUNCTIONS)}."
+    )
+
+
+def _make_activation(activation_function: str) -> nn.Module:
+    normalized = _normalize_activation_function(activation_function)
+    if normalized == "relu":
+        return nn.ReLU(inplace=True)
+    if normalized == "leaky_relu":
+        return nn.LeakyReLU(negative_slope=0.01, inplace=True)
+    raise AssertionError(f"Unexpected activation function: {normalized}")
+
+
+def _replace_relu_with_activation(module: nn.Module, activation_function: str) -> None:
+    normalized = _normalize_activation_function(activation_function)
+    if normalized == "relu":
+        return
+    for child_name, child in module.named_children():
+        if isinstance(child, nn.ReLU):
+            setattr(module, child_name, _make_activation(normalized))
+        else:
+            _replace_relu_with_activation(child, normalized)
+
+
 @dataclass(slots=True)
 class ModelConfig:
     use_spatial_weighting: bool = True
@@ -21,6 +59,10 @@ class ModelConfig:
     iris_grid_hidden_dim: int = 16
     fusion_hidden_dim: int = 512
     dropout: float = 0.2
+    activation_function: str = "relu"
+
+    def __post_init__(self) -> None:
+        self.activation_function = _normalize_activation_function(self.activation_function)
 
 
 @dataclass(slots=True)
@@ -34,12 +76,12 @@ class EstimationResult:
 
 
 class SpatialWeightingBlock(nn.Module):
-    def __init__(self, channels: int) -> None:
+    def __init__(self, channels: int, activation_function: str) -> None:
         super().__init__()
         self.projection = nn.Sequential(
             nn.Conv2d(channels, channels // 4, kernel_size=1, bias=False),
             nn.BatchNorm2d(channels // 4),
-            nn.ReLU(inplace=True),
+            _make_activation(activation_function),
             nn.Conv2d(channels // 4, channels, kernel_size=1, bias=True),
             nn.Sigmoid(),
         )
@@ -49,24 +91,24 @@ class SpatialWeightingBlock(nn.Module):
 
 
 class EyeEncoder(nn.Module):
-    def __init__(self, output_dim: int) -> None:
+    def __init__(self, output_dim: int, activation_function: str) -> None:
         super().__init__()
         self.features = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
+            _make_activation(activation_function),
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
+            _make_activation(activation_function),
             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
+            _make_activation(activation_function),
             nn.AdaptiveAvgPool2d(1),
         )
         self.head = nn.Sequential(
             nn.Flatten(),
             nn.Linear(128, output_dim),
-            nn.ReLU(inplace=True),
+            _make_activation(activation_function),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -74,7 +116,13 @@ class EyeEncoder(nn.Module):
 
 
 class MlpBranch(nn.Module):
-    def __init__(self, input_dim: int, hidden_dims: list[int], output_dim: int, dropout: float = 0.0) -> None:
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dims: list[int],
+        output_dim: int,
+        dropout: float = 0.0,
+    ) -> None:
         super().__init__()
         layers: list[nn.Module] = []
         previous_dim = input_dim
@@ -91,7 +139,7 @@ class MlpBranch(nn.Module):
 
 
 class FaceEncoder(nn.Module):
-    def __init__(self, feature_dim: int, use_spatial_weighting: bool) -> None:
+    def __init__(self, feature_dim: int, use_spatial_weighting: bool, activation_function: str) -> None:
         super().__init__()
         backbone = resnet18(weights=None)
         self.stem = nn.Sequential(backbone.conv1, backbone.bn1, backbone.relu, backbone.maxpool)
@@ -99,13 +147,16 @@ class FaceEncoder(nn.Module):
         self.layer2 = backbone.layer2
         self.layer3 = backbone.layer3
         self.layer4 = backbone.layer4
-        self.spatial_weighting = SpatialWeightingBlock(512) if use_spatial_weighting else nn.Identity()
+        self.spatial_weighting = (
+            SpatialWeightingBlock(512, activation_function) if use_spatial_weighting else nn.Identity()
+        )
         self.pool = nn.AdaptiveAvgPool2d(1)
         self.projection = nn.Sequential(
             nn.Flatten(),
             nn.Linear(512, feature_dim),
-            nn.ReLU(inplace=True),
+            _make_activation(activation_function),
         )
+        _replace_relu_with_activation(self, activation_function)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.stem(x)
@@ -125,8 +176,12 @@ class GazeEstimationAnn(nn.Module):
         self.face_encoder = FaceEncoder(
             feature_dim=config.face_feature_dim,
             use_spatial_weighting=config.use_spatial_weighting,
+            activation_function=config.activation_function,
         )
-        self.eye_encoder = EyeEncoder(output_dim=config.eye_feature_dim)
+        self.eye_encoder = EyeEncoder(
+            output_dim=config.eye_feature_dim,
+            activation_function=config.activation_function,
+        )
         self.face_grid_branch = MlpBranch(
             input_dim=2500,
             hidden_dims=[256],
@@ -202,16 +257,52 @@ def _load_torch_checkpoint(path: Path, device: torch.device) -> dict[str, Any]:
     raise TypeError(f"Unsupported checkpoint payload at {path}.")
 
 
-def _default_weights_path() -> Path | None:
+def _activation_function_from_weights_path(path: Path) -> str | None:
+    normalized_parts = {
+        part.lower().replace("-", "_").replace(" ", "_")
+        for part in path.parts
+    }
+    normalized_stem = path.stem.lower().replace("-", "_").replace(" ", "_")
+    if "leaky_relu" in normalized_parts or "leaky_relu" in normalized_stem:
+        return "leaky_relu"
+    if "relu" in normalized_parts or normalized_stem == "relu":
+        return "relu"
+    return None
+
+
+def _default_weights_path(activation_function: str = "relu") -> Path | None:
+    normalized = _normalize_activation_function(activation_function)
     package_path = Path(__file__).resolve().parent
-    candidates = [
-        package_path / "weights" / "best.pt",
-        package_path.parent / "outputs" / "train" / "fold_p00" / "best.pt",
-    ]
+    if normalized == "relu":
+        candidates = [
+            package_path / "weights" / "best.pt",
+            package_path / "weights" / "relu" / "best.pt",
+            package_path.parent / "outputs" / "train" / "fold_p00" / "best.pt",
+            package_path.parent / "outputs" / "activation_comparison" / "relu" / "fold_p00" / "best.pt",
+        ]
+    else:
+        candidates = [
+            package_path / "weights" / "leaky_relu" / "best.pt",
+            package_path / "weights" / "best_leaky_relu.pt",
+            package_path / "weights" / "leaky_relu_best.pt",
+            package_path.parent / "outputs" / "activation_comparison" / "leaky_relu" / "fold_p00" / "best.pt",
+        ]
     for candidate in candidates:
         if candidate.exists():
             return candidate
     return None
+
+
+def _missing_weights_message(activation_function: str) -> str:
+    normalized = _normalize_activation_function(activation_function)
+    if normalized == "relu":
+        location = "`GazeEstimation/weights/best.pt`"
+    else:
+        location = "`GazeEstimation/weights/leaky_relu/best.pt`"
+    return (
+        f"No pretrained weights were found for activation_function={normalized!r}. "
+        f"Pass `weights_path`, or place a checkpoint at {location}."
+    )
 
 
 def _resolve_device(device: str) -> torch.device:
@@ -233,6 +324,7 @@ class Estimator:
         calibration_matrix: np.ndarray | None = None,
         calibration_fn: Callable[[np.ndarray], np.ndarray] | None = None,
         clamp_to_screen: bool = True,
+        activation_function: str | None = None,
     ) -> None:
         self.iris_detector = IrisDetector if IrisDetector is not None else Detector(device="cpu")
         self.device = _resolve_device(device)
@@ -241,15 +333,33 @@ class Estimator:
         self.calibration_fn = calibration_fn
         self.clamp_to_screen = clamp_to_screen
 
-        self.weights_path = Path(weights_path) if weights_path is not None else _default_weights_path()
+        requested_activation = _normalize_activation_function(
+            activation_function
+            or (model_config.activation_function if model_config is not None else "relu")
+        )
+        self.weights_path = (
+            Path(weights_path)
+            if weights_path is not None
+            else _default_weights_path(requested_activation)
+        )
         if self.weights_path is None:
-            raise FileNotFoundError(
-                "No pretrained weights were found. Pass `weights_path`, or place `best.pt` at "
-                "`GazeEstimation/weights/best.pt`."
-            )
+            raise FileNotFoundError(_missing_weights_message(requested_activation))
 
         checkpoint = _load_torch_checkpoint(self.weights_path, self.device)
-        self.model_config = model_config or self._config_from_checkpoint(checkpoint) or ModelConfig()
+        checkpoint_config = self._config_from_checkpoint(checkpoint)
+        inferred_activation = _activation_function_from_weights_path(self.weights_path)
+        selected_activation = _normalize_activation_function(
+            activation_function
+            or (model_config.activation_function if model_config is not None else "")
+            or self._activation_from_checkpoint(checkpoint)
+            or inferred_activation
+            or "relu"
+        )
+        self.activation_function = selected_activation
+        self.model_config = replace(
+            model_config or checkpoint_config or ModelConfig(),
+            activation_function=selected_activation,
+        )
         self.model = GazeEstimationAnn(self.model_config).to(self.device)
         state_dict = checkpoint.get("model_state_dict", checkpoint)
         self.model.load_state_dict(state_dict)
@@ -265,6 +375,19 @@ class Estimator:
             return None
         allowed = set(ModelConfig.__dataclass_fields__)
         return ModelConfig(**{key: value for key, value in config.items() if key in allowed})
+
+    @staticmethod
+    def _activation_from_checkpoint(checkpoint: dict[str, Any]) -> str | None:
+        metadata = checkpoint.get("metadata")
+        if not isinstance(metadata, dict):
+            return None
+        config = metadata.get("model_config")
+        if not isinstance(config, dict):
+            return None
+        activation_function = config.get("activation_function")
+        if not isinstance(activation_function, str):
+            return None
+        return _normalize_activation_function(activation_function)
 
     @staticmethod
     def fit_affine_calibration(predicted_points: np.ndarray, screen_points: np.ndarray) -> np.ndarray:

@@ -4,7 +4,7 @@ import argparse
 import csv
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -27,6 +27,7 @@ DEFAULT_CONFIG_PATH = ROOT / "config.toml"
 DEFAULT_POINTS_PATH = ROOT / "calibration-points.csv"
 DEFAULT_MEDIAPIPE_MODEL = ROOT / "models" / "face_landmarker_v2_with_blendshapes.task"
 DEFAULT_IRIS_DATA_DIR = ROOT / "IrisDetection" / "data"
+DEFAULT_ACTIVATION_FUNCTION = "leaky_relu"
 
 DEFAULT_RELATIVE_POINTS: tuple[tuple[float, float], ...] = (
     (0.25, 0.25),
@@ -126,12 +127,14 @@ class DistanceAwareCalibration:
     global_matrix: np.ndarray
     samples: list[CalibrationSample]
     created_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def fit(
         cls,
         samples: Sequence[CalibrationSample],
         screen_size: tuple[int, int],
+        metadata: dict[str, Any] | None = None,
     ) -> "DistanceAwareCalibration":
         if len(samples) < 3:
             raise ValueError("At least three calibration samples are required.")
@@ -189,6 +192,7 @@ class DistanceAwareCalibration:
             global_matrix=global_matrix,
             samples=list(samples),
             created_at=datetime.now(timezone.utc).isoformat(),
+            metadata={} if metadata is None else dict(metadata),
         )
 
     def apply(
@@ -244,6 +248,7 @@ class DistanceAwareCalibration:
             "global_matrix": self.global_matrix.astype(float).tolist(),
             "distance_bins": [item.to_json() for item in self.bins],
             "samples": [sample.to_json() for sample in self.samples],
+            "metadata": self.metadata,
         }
         output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return output_path
@@ -273,6 +278,7 @@ class DistanceAwareCalibration:
                 CalibrationSample.from_json(item) for item in payload.get("samples", [])
             ],
             created_at=str(payload.get("created_at", "")),
+            metadata=dict(payload.get("metadata", {})),
         )
 
 
@@ -418,6 +424,8 @@ class AdvancedCalibrationPipeline:
         iris_data_dir: str | Path | None = DEFAULT_IRIS_DATA_DIR,
         model_device: str = "auto",
         iris_device: str = "cpu",
+        weights_path: str | Path | None = None,
+        activation_function: str = DEFAULT_ACTIVATION_FUNCTION,
     ) -> None:
         self.screen = screen
         self.output_path = Path(output_path)
@@ -430,13 +438,19 @@ class AdvancedCalibrationPipeline:
         self.stages = list(stages)
         self.mediapipe_model_path = Path(mediapipe_model_path)
         self.iris_data_dir = Path(iris_data_dir) if iris_data_dir is not None else None
+        self.weights_path = Path(weights_path) if weights_path is not None else None
+        self.activation_function = activation_function
         self.gaze_estimator = build_gaze_estimator(
             screen_size=(screen.width_px, screen.height_px),
             mediapipe_model_path=self.mediapipe_model_path,
             iris_data_dir=self.iris_data_dir,
             model_device=model_device,
             iris_device=iris_device,
+            weights_path=self.weights_path,
+            activation_function=self.activation_function,
         )
+        self.activation_function = self.gaze_estimator.activation_function
+        self.weights_path = self.gaze_estimator.weights_path
 
     def run(self) -> DistanceAwareCalibration:
         cap = cv2.VideoCapture(self.camera_index)
@@ -493,6 +507,10 @@ class AdvancedCalibrationPipeline:
         calibration = DistanceAwareCalibration.fit(
             samples=samples,
             screen_size=(self.screen.width_px, self.screen.height_px),
+            metadata={
+                "activation_function": self.gaze_estimator.activation_function,
+                "weights_path": str(self.gaze_estimator.weights_path),
+            },
         )
         calibration.save(self.output_path)
         return calibration
@@ -615,6 +633,8 @@ def build_gaze_estimator(
     iris_data_dir: str | Path | None = DEFAULT_IRIS_DATA_DIR,
     model_device: str = "auto",
     iris_device: str = "cpu",
+    weights_path: str | Path | None = None,
+    activation_function: str = DEFAULT_ACTIVATION_FUNCTION,
 ) -> GazeEstimator:
     iris_detector = IrisDetector(
         mediapipe_model_path=_optional_path(Path(mediapipe_model_path)),
@@ -625,8 +645,10 @@ def build_gaze_estimator(
     )
     return GazeEstimator(
         IrisDetector=iris_detector,
+        weights_path=weights_path,
         screen_size=screen_size,
         device=model_device,
+        activation_function=activation_function,
     )
 
 
@@ -741,6 +763,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
     parser.add_argument(
+        "--weights",
+        help=(
+            "Path to ANN checkpoint. If omitted, Estimator picks the default checkpoint "
+            "for --activation."
+        ),
+    )
+    parser.add_argument(
+        "--activation",
+        default=DEFAULT_ACTIVATION_FUNCTION,
+        choices=("relu", "leaky_relu"),
+        help="Model activation variant to use for collecting calibration samples.",
+    )
+    parser.add_argument(
         "--mediapipe-model",
         default=str(DEFAULT_MEDIAPIPE_MODEL),
         help="Face landmarker model path.",
@@ -769,6 +804,8 @@ def main() -> None:
         iris_data_dir=args.iris_data_dir,
         model_device=args.device,
         iris_device=args.iris_device,
+        weights_path=args.weights,
+        activation_function=args.activation,
     )
     try:
         calibration = pipeline.run()

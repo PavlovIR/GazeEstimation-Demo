@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import cv2
@@ -22,6 +23,7 @@ DEFAULT_CONFIG = ROOT / "config.toml"
 DEFAULT_POINTS = ROOT / "points.csv"
 DEFAULT_CALIBRATION = DEFAULT_CALIBRATION_PATH
 DEFAULT_LOG_DIR = ROOT / "accuracy_runs"
+DEFAULT_ACTIVATION_FUNCTION = "leaky_relu"
 
 
 def _optional_path(path: Path) -> Path | None:
@@ -47,16 +49,24 @@ def _console_quit_requested() -> bool:
     return False
 
 
-def _build_gaze_estimator(screen_size: tuple[int, int] | None) -> GazeEstimator:
+def _build_gaze_estimator(
+    screen_size: tuple[int, int] | None,
+    weights_path: str | Path | None,
+    activation_function: str,
+    model_device: str,
+    iris_device: str,
+) -> GazeEstimator:
     iris_detector = IrisDetector(
         mediapipe_model_path=_optional_path(DEFAULT_MEDIAPIPE_MODEL),
         iris_data_dir=_optional_path(DEFAULT_IRIS_DATA_DIR),
-        device="cuda",
+        device=iris_device,
     )
     return GazeEstimator(
         IrisDetector=iris_detector,
+        weights_path=weights_path,
         screen_size=screen_size,
-        device="auto",
+        device=model_device,
+        activation_function=activation_function,
     )
 
 
@@ -76,6 +86,36 @@ def _load_calibration() -> DistanceAwareCalibration | None:
     calibration = DistanceAwareCalibration.load(DEFAULT_CALIBRATION)
     print(f"Loaded distance-aware calibration from {DEFAULT_CALIBRATION}.")
     return calibration
+
+
+def _check_calibration_model_match(
+    calibration: DistanceAwareCalibration | None,
+    gaze_estimator: GazeEstimator,
+) -> None:
+    if calibration is None:
+        return
+
+    activation = calibration.metadata.get("activation_function")
+    if activation is None:
+        print(
+            "Warning: calibration.json has no activation metadata. "
+            "Re-run calibration.py for reliable Leaky ReLU calibration."
+        )
+        return
+    if str(activation) != gaze_estimator.activation_function:
+        raise RuntimeError(
+            "Calibration/model mismatch: "
+            f"calibration was collected with activation={activation!r}, "
+            f"but runtime loaded activation={gaze_estimator.activation_function!r}. "
+            "Re-run calibration.py with the same --activation/--weights settings."
+        )
+
+    weights_path = calibration.metadata.get("weights_path")
+    if weights_path is not None and Path(weights_path) != Path(gaze_estimator.weights_path):
+        print(
+            "Warning: calibration.json was collected with a different weights path: "
+            f"{weights_path!r}; runtime uses {str(gaze_estimator.weights_path)!r}."
+        )
 
 
 def _face_bbox_xyxy(result: EstimationResult | None) -> tuple[float, float, float, float] | None:
@@ -106,13 +146,46 @@ def _error_deg(error_mm: float | None, face_distance_mm: float | None) -> float 
     return math.degrees(math.atan(float(error_mm) / float(face_distance_mm)))
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run ANN gaze accuracy UI.")
+    parser.add_argument(
+        "--weights",
+        help=(
+            "Path to ANN checkpoint. If omitted, Estimator picks the default checkpoint "
+            "for --activation."
+        ),
+    )
+    parser.add_argument(
+        "--activation",
+        default=DEFAULT_ACTIVATION_FUNCTION,
+        choices=("relu", "leaky_relu"),
+        help="Model activation variant to load.",
+    )
+    parser.add_argument("--device", default="auto", help="ANN model device: auto, cpu, cuda, etc.")
+    parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     screen, accuracy_ui = _build_accuracy_ui()
     screen_size = (screen.width_px, screen.height_px) if screen is not None else None
     calibration = _load_calibration()
     if screen_size is None and calibration is not None:
         screen_size = calibration.screen_size
-    gaze_estimator = _build_gaze_estimator(screen_size=screen_size)
+    gaze_estimator = _build_gaze_estimator(
+        screen_size=screen_size,
+        weights_path=args.weights,
+        activation_function=args.activation,
+        model_device=args.device,
+        iris_device=args.iris_device,
+    )
+    print(
+        "Loaded gaze model "
+        f"activation={gaze_estimator.activation_function}, "
+        f"weights={gaze_estimator.weights_path}."
+    )
+    _check_calibration_model_match(calibration, gaze_estimator)
     show_camera_window = accuracy_ui is None and _opencv_has_gui()
     distance_tracker = None
     distance_tracker_failed = False

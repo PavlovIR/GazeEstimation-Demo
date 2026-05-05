@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from calibration import (
+    DEFAULT_ACTIVATION_FUNCTION,
     DEFAULT_CALIBRATION_PATH,
     DEFAULT_CONFIG_PATH,
     DEFAULT_IRIS_DATA_DIR,
@@ -42,6 +43,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fov-degrees", type=float, default=60.0, help="Approximate webcam horizontal FOV.")
     parser.add_argument("--device", default="auto", help="ANN model device: auto, cpu, cuda, etc.")
     parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
+    parser.add_argument(
+        "--weights",
+        help=(
+            "Path to ANN checkpoint. If omitted, Estimator picks the default checkpoint "
+            "for --activation."
+        ),
+    )
+    parser.add_argument(
+        "--activation",
+        default=DEFAULT_ACTIVATION_FUNCTION,
+        choices=("relu", "leaky_relu"),
+        help="Model activation variant to load.",
+    )
     parser.add_argument("--block-num", type=int, default=4, help="Number of grid blocks per row/column.")
     parser.add_argument("--block-ratio", type=float, default=0.15, help="Block size relative to screen.")
     parser.add_argument("--margin-ratio", type=float, default=0.08, help="Grid margin relative to screen.")
@@ -65,7 +79,28 @@ def main() -> None:
         iris_data_dir=DEFAULT_IRIS_DATA_DIR,
         model_device=args.device,
         iris_device=args.iris_device,
+        weights_path=args.weights,
+        activation_function=args.activation,
     )
+    calibration_activation = calibration.metadata.get("activation_function")
+    if calibration_activation is None:
+        print(
+            "Warning: calibration.json has no activation metadata. "
+            "Re-run calibration.py for reliable Leaky ReLU calibration."
+        )
+    elif str(calibration_activation) != gaze_estimator.activation_function:
+        raise RuntimeError(
+            "Calibration/model mismatch: "
+            f"calibration was collected with activation={calibration_activation!r}, "
+            f"but demo loaded activation={gaze_estimator.activation_function!r}. "
+            "Re-run calibration.py with the same --activation/--weights settings."
+        )
+    calibration_weights = calibration.metadata.get("weights_path")
+    if calibration_weights is not None and Path(calibration_weights) != Path(gaze_estimator.weights_path):
+        print(
+            "Warning: calibration.json was collected with a different weights path: "
+            f"{calibration_weights!r}; demo uses {str(gaze_estimator.weights_path)!r}."
+        )
 
     cap = cv2.VideoCapture(args.camera)
     if not cap.isOpened():
