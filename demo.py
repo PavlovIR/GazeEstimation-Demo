@@ -40,6 +40,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--screen-config", default=str(DEFAULT_CONFIG_PATH), help="Path to config.toml.")
     parser.add_argument("--calibration", default=str(DEFAULT_CALIBRATION_PATH), help="Path to calibration JSON.")
     parser.add_argument("--camera", type=int, default=0, help="Webcam index.")
+    parser.add_argument(
+        "--video-output",
+        type=Path,
+        help="Save the rendered pygame scene to a video file. Use .mp4 for best compatibility.",
+    )
+    parser.add_argument("--video-fps", type=float, default=30.0, help="Frame rate for --video-output.")
     parser.add_argument("--fov-degrees", type=float, default=60.0, help="Approximate webcam horizontal FOV.")
     parser.add_argument("--device", default="auto", help="ANN model device: auto, cpu, cuda, etc.")
     parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
@@ -61,6 +67,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--margin-ratio", type=float, default=0.08, help="Grid margin relative to screen.")
     parser.add_argument("--gap-ratio", type=float, default=0.08, help="Grid gap relative to screen.")
     return parser.parse_args()
+
+
+def open_scene_video_writer(
+    output_path: Path,
+    *,
+    width_px: int,
+    height_px: int,
+    fps: float,
+) -> cv2.VideoWriter:
+    if fps <= 0:
+        raise ValueError("--video-fps must be greater than 0.")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    writer = cv2.VideoWriter(
+        str(output_path),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        fps,
+        (width_px, height_px),
+    )
+    if not writer.isOpened():
+        raise RuntimeError(
+            f"Failed to open video writer for {output_path}. "
+            "Use an .mp4 output path and make sure OpenCV has video codec support."
+        )
+    return writer
 
 
 def main() -> None:
@@ -125,6 +156,15 @@ def main() -> None:
         gap_ratio=args.gap_ratio,
         block_num=args.block_num,
     )
+    scene_writer = None
+    if args.video_output is not None:
+        scene_writer = open_scene_video_writer(
+            args.video_output,
+            width_px=screen.width_px,
+            height_px=screen.height_px,
+            fps=args.video_fps,
+        )
+        print(f"Recording rendered scene to {args.video_output.resolve()}.")
 
     print(f"Loaded calibration from {calibration_path.resolve()}. Press ESC in the demo window to quit.")
 
@@ -135,9 +175,9 @@ def main() -> None:
                 break
 
             predicted_px = None
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             try:
                 face_distance_mm = distance_tracker.estimate(frame)
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 result = gaze_estimator.predict(rgb_frame, return_details=True)
                 if not isinstance(result, EstimationResult):
                     raise RuntimeError("Estimator did not return detailed output.")
@@ -145,12 +185,18 @@ def main() -> None:
             except (RuntimeError, ValueError) as exc:
                 print(f"Gaze demo skipped: {exc}", end="\r")
 
-            _, still_running = ui.update(predicted_px)
+            _, still_running = ui.update(predicted_px, camera_frame=rgb_frame)
+            if scene_writer is not None:
+                scene_frame_rgb = ui.capture_frame_rgb()
+                scene_frame_bgr = cv2.cvtColor(scene_frame_rgb, cv2.COLOR_RGB2BGR)
+                scene_writer.write(scene_frame_bgr)
             if not still_running:
                 break
     except KeyboardInterrupt:
         pass
     finally:
+        if scene_writer is not None:
+            scene_writer.release()
         ui.close()
         cap.release()
 

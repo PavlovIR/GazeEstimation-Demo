@@ -55,6 +55,9 @@ class GazeDemoUI:
         self.running = True
         self.last_highlight = None
         self.last_update_ts = time.time()
+        self.video_margin_px = 24
+        self.video_width_px = max(160, int(round(self.screen_cfg.width_px * 0.18)))
+        self.video_height_px = int(round(self.video_width_px * 9 / 16))
 
     def _build_grid(self):
         w = int(self.screen_cfg.width_px)
@@ -74,7 +77,39 @@ class GazeDemoUI:
                 rects.append(self.pygame.Rect(x, y, block_w, block_h))
         return rects
 
-    def _draw(self, gaze_px, active_idx):
+    def _draw_camera_frame(self, camera_frame):
+        if camera_frame is None:
+            return
+
+        pygame = self.pygame
+        if camera_frame.ndim != 3 or camera_frame.shape[2] != 3:
+            return
+
+        source_h, source_w = camera_frame.shape[:2]
+        target_w = self.video_width_px
+        target_h = min(
+            self.video_height_px,
+            max(1, self.screen_cfg.height_px - self.video_margin_px * 2),
+        )
+        scale = min(target_w / source_w, target_h / source_h)
+        preview_w = max(1, int(round(source_w * scale)))
+        preview_h = max(1, int(round(source_h * scale)))
+        x = self.screen_cfg.width_px - preview_w - self.video_margin_px
+        y = self.screen_cfg.height_px - preview_h - self.video_margin_px
+
+        surface = pygame.image.frombuffer(
+            camera_frame.tobytes(), (source_w, source_h), "RGB"
+        )
+        surface = pygame.transform.smoothscale(surface, (preview_w, preview_h))
+        self.screen.blit(surface, (x, y))
+        pygame.draw.rect(
+            self.screen,
+            (220, 220, 220),
+            pygame.Rect(x, y, preview_w, preview_h),
+            2,
+        )
+
+    def _draw(self, gaze_px, active_idx, camera_frame=None):
         pygame = self.pygame
         self.screen.fill((12, 12, 12))
 
@@ -90,14 +125,15 @@ class GazeDemoUI:
         if gaze_px is not None:
             pygame.draw.circle(self.screen, (255, 90, 90), gaze_px, 6)
 
+        self._draw_camera_frame(camera_frame)
         pygame.display.flip()
 
-    def update(self, predicted_cm):
+    def update(self, predicted_cm, camera_frame=None):
         pygame = self.pygame
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
+            if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_q):
                 self.running = False
 
         gaze_px = None
@@ -109,11 +145,15 @@ class GazeDemoUI:
                     active_idx = idx
                     break
 
-        self._draw(gaze_px, active_idx)
+        self._draw(gaze_px, active_idx, camera_frame)
         self.clock.tick(60)
         self.last_update_ts = time.time()
         self.last_highlight = active_idx
         return active_idx, self.running
+
+    def capture_frame_rgb(self):
+        frame = self.pygame.surfarray.array3d(self.screen)
+        return frame.swapaxes(0, 1).copy()
 
     def close(self):
         self.pygame.quit()

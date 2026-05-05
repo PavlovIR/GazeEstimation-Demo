@@ -18,3 +18,4 @@ GazeEstimation/weights/*
 
 # Other
 calibration.json
+*.mp4
