@@ -6,14 +6,14 @@ from pathlib import Path
 import cv2
 
 from calibration import (
-    DEFAULT_CALIBRATION_PATH,
     DistanceAwareCalibration,
     FaceDistanceTracker,
 )
-from gaze_ui.AccuracyUi import GazeAccuracyUI
 from gaze_ui.accuracy_logger import AccuracyLogger
+from gaze_ui.AccuracyUi import GazeAccuracyUI
 from gaze_ui.Screen import Screen
-from GazeEstimation import EstimationResult, Estimator as GazeEstimator
+from GazeEstimation import EstimationResult
+from GazeEstimation import Estimator as GazeEstimator
 from IrisDetection import Detector as IrisDetector
 
 ROOT = Path(__file__).resolve().parent
@@ -21,7 +21,7 @@ DEFAULT_MEDIAPIPE_MODEL = ROOT / "models" / "face_landmarker_v2_with_blendshapes
 DEFAULT_IRIS_DATA_DIR = ROOT / "IrisDetection" / "data"
 DEFAULT_CONFIG = ROOT / "config.toml"
 DEFAULT_POINTS = ROOT / "points.csv"
-DEFAULT_CALIBRATION = DEFAULT_CALIBRATION_PATH
+DEFAULT_CALIBRATION = ROOT / "calibration.json"
 DEFAULT_LOG_DIR = ROOT / "accuracy_runs"
 DEFAULT_ACTIVATION_FUNCTION = "leaky_relu"
 
@@ -80,11 +80,13 @@ def _build_accuracy_ui() -> tuple[Screen | None, GazeAccuracyUI | None]:
     return screen, GazeAccuracyUI(screen, points_path=points_path)
 
 
-def _load_calibration() -> DistanceAwareCalibration | None:
-    if not DEFAULT_CALIBRATION.exists():
-        return None
-    calibration = DistanceAwareCalibration.load(DEFAULT_CALIBRATION)
-    print(f"Loaded distance-aware calibration from {DEFAULT_CALIBRATION}.")
+def _load_calibration(
+    calibration_path=DEFAULT_CALIBRATION,
+) -> DistanceAwareCalibration | None:
+    # if not calibration_path.exists():
+    #   return None
+    calibration = DistanceAwareCalibration.load(calibration_path)
+    print(f"Loaded distance-aware calibration from {calibration_path}.")
     return calibration
 
 
@@ -111,14 +113,18 @@ def _check_calibration_model_match(
         )
 
     weights_path = calibration.metadata.get("weights_path")
-    if weights_path is not None and Path(weights_path) != Path(gaze_estimator.weights_path):
+    if weights_path is not None and Path(weights_path) != Path(
+        gaze_estimator.weights_path
+    ):
         print(
             "Warning: calibration.json was collected with a different weights path: "
             f"{weights_path!r}; runtime uses {str(gaze_estimator.weights_path)!r}."
         )
 
 
-def _face_bbox_xyxy(result: EstimationResult | None) -> tuple[float, float, float, float] | None:
+def _face_bbox_xyxy(
+    result: EstimationResult | None,
+) -> tuple[float, float, float, float] | None:
     if result is None:
         return None
     box = result.detection.face_box
@@ -135,7 +141,9 @@ def _px_to_cm(screen: Screen, predicted_px) -> tuple[float, float] | None:
 def _target_cm(accuracy_ui: GazeAccuracyUI | None) -> tuple[float, float] | None:
     if accuracy_ui is None or accuracy_ui.target_mm is None:
         return None
-    return float(accuracy_ui.target_mm[0]) / 10.0, float(accuracy_ui.target_mm[1]) / 10.0
+    return float(accuracy_ui.target_mm[0]) / 10.0, float(
+        accuracy_ui.target_mm[1]
+    ) / 10.0
 
 
 def _error_deg(error_mm: float | None, face_distance_mm: float | None) -> float | None:
@@ -161,7 +169,13 @@ def parse_args() -> argparse.Namespace:
         choices=("relu", "leaky_relu"),
         help="Model activation variant to load.",
     )
-    parser.add_argument("--device", default="auto", help="ANN model device: auto, cpu, cuda, etc.")
+    parser.add_argument(
+        "--calibration-file",
+        default=DEFAULT_CALIBRATION,
+    )
+    parser.add_argument(
+        "--device", default="auto", help="ANN model device: auto, cpu, cuda, etc."
+    )
     parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
     return parser.parse_args()
 
@@ -170,7 +184,7 @@ def main() -> None:
     args = parse_args()
     screen, accuracy_ui = _build_accuracy_ui()
     screen_size = (screen.width_px, screen.height_px) if screen is not None else None
-    calibration = _load_calibration()
+    calibration = _load_calibration(args.calibration_file)
     if screen_size is None and calibration is not None:
         screen_size = calibration.screen_size
     gaze_estimator = _build_gaze_estimator(
@@ -193,7 +207,9 @@ def main() -> None:
         AccuracyLogger(
             str(DEFAULT_LOG_DIR),
             screen,
-            calibration_path=str(DEFAULT_CALIBRATION) if DEFAULT_CALIBRATION.exists() else None,
+            calibration_path=str(DEFAULT_CALIBRATION)
+            if DEFAULT_CALIBRATION.exists()
+            else None,
         )
         if screen is not None and accuracy_ui is not None
         else None
@@ -266,7 +282,9 @@ def main() -> None:
             if accuracy_ui is not None:
                 target_px = accuracy_ui.target_px
                 target_cm = _target_cm(accuracy_ui)
-                error_mm, _, still_running = accuracy_ui.update_px(predicted_px, status=status)
+                error_mm, _, still_running = accuracy_ui.update_px(
+                    predicted_px, status=status
+                )
                 if logger is not None:
                     logger.log(
                         frame=frame,
@@ -274,7 +292,9 @@ def main() -> None:
                         gaze_cm=_px_to_cm(screen, predicted_px),
                         target_cm=target_cm,
                         target_px=target_px,
-                        error_cm=(float(error_mm) / 10.0) if error_mm is not None else None,
+                        error_cm=(float(error_mm) / 10.0)
+                        if error_mm is not None
+                        else None,
                         error_deg=_error_deg(error_mm, face_distance_mm),
                     )
                 if not still_running:

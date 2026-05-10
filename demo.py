@@ -21,6 +21,11 @@ from gaze_ui.Screen import Screen
 from GazeEstimation import EstimationResult
 
 
+ROOT = Path(__file__).resolve().parent
+DEFAULT_RELU_WEIGHTS_PATH = ROOT / "GazeEstimation" / "weights" / "best.pt"
+DEFAULT_RELU_CALIBRATION_PATH = ROOT / "calibration-relu.json"
+
+
 class DemoScreenAdapter:
     def __init__(self, screen: Screen) -> None:
         self.screen = screen
@@ -38,7 +43,13 @@ class DemoScreenAdapter:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the calibrated gaze demo grid.")
     parser.add_argument("--screen-config", default=str(DEFAULT_CONFIG_PATH), help="Path to config.toml.")
-    parser.add_argument("--calibration", default=str(DEFAULT_CALIBRATION_PATH), help="Path to calibration JSON.")
+    parser.add_argument(
+        "--calibration",
+        help=(
+            "Path to calibration JSON. Defaults to calibration.json, or "
+            "calibration-relu.json in --standard-relu mode when that file exists."
+        ),
+    )
     parser.add_argument("--camera", type=int, default=0, help="Webcam index.")
     parser.add_argument(
         "--video-output",
@@ -49,6 +60,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fov-degrees", type=float, default=60.0, help="Approximate webcam horizontal FOV.")
     parser.add_argument("--device", default="auto", help="ANN model device: auto, cpu, cuda, etc.")
     parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
+    parser.add_argument(
+        "--standard-relu",
+        action="store_true",
+        help=(
+            "Launch with the standard ReLU checkpoint. Shortcut for "
+            "--activation relu --weights GazeEstimation/weights/best.pt."
+        ),
+    )
     parser.add_argument(
         "--weights",
         help=(
@@ -67,6 +86,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--margin-ratio", type=float, default=0.08, help="Grid margin relative to screen.")
     parser.add_argument("--gap-ratio", type=float, default=0.08, help="Grid gap relative to screen.")
     return parser.parse_args()
+
+
+def resolve_model_options(args: argparse.Namespace) -> tuple[str, str | None]:
+    if not args.standard_relu:
+        return args.activation, args.weights
+
+    weights = args.weights if args.weights is not None else str(DEFAULT_RELU_WEIGHTS_PATH)
+    return "relu", weights
+
+
+def resolve_calibration_path(args: argparse.Namespace) -> Path:
+    if args.calibration is not None:
+        return Path(args.calibration)
+    if args.standard_relu and DEFAULT_RELU_CALIBRATION_PATH.exists():
+        return DEFAULT_RELU_CALIBRATION_PATH
+    return DEFAULT_CALIBRATION_PATH
 
 
 def open_scene_video_writer(
@@ -96,7 +131,8 @@ def open_scene_video_writer(
 
 def main() -> None:
     args = parse_args()
-    calibration_path = Path(args.calibration)
+    activation_function, weights_path = resolve_model_options(args)
+    calibration_path = resolve_calibration_path(args)
     if not calibration_path.exists():
         raise FileNotFoundError(
             f"Calibration file not found at {calibration_path}. Run calibration.py first."
@@ -110,8 +146,8 @@ def main() -> None:
         iris_data_dir=DEFAULT_IRIS_DATA_DIR,
         model_device=args.device,
         iris_device=args.iris_device,
-        weights_path=args.weights,
-        activation_function=args.activation,
+        weights_path=weights_path,
+        activation_function=activation_function,
     )
     calibration_activation = calibration.metadata.get("activation_function")
     if calibration_activation is None:
@@ -124,7 +160,9 @@ def main() -> None:
             "Calibration/model mismatch: "
             f"calibration was collected with activation={calibration_activation!r}, "
             f"but demo loaded activation={gaze_estimator.activation_function!r}. "
-            "Re-run calibration.py with the same --activation/--weights settings."
+            "Re-run calibration.py with the same --activation/--weights settings. "
+            "For standard ReLU, use: calibration.py --activation relu "
+            "--weights GazeEstimation/weights/best.pt --output calibration-relu.json"
         )
     calibration_weights = calibration.metadata.get("weights_path")
     if calibration_weights is not None and Path(calibration_weights) != Path(gaze_estimator.weights_path):
