@@ -59,7 +59,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video-fps", type=float, default=30.0, help="Frame rate for --video-output.")
     parser.add_argument("--fov-degrees", type=float, default=60.0, help="Approximate webcam horizontal FOV.")
     parser.add_argument("--device", default="auto", help="ANN model device: auto, cpu, cuda, etc.")
-    parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
+    parser.add_argument(
+        "--iris-device",
+        default="auto",
+        help="Iris detector device: auto, cpu, cuda, mps, etc.",
+    )
     parser.add_argument(
         "--standard-relu",
         action="store_true",

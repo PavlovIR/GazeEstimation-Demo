@@ -425,7 +425,7 @@ class AdvancedCalibrationPipeline:
         mediapipe_model_path: str | Path = DEFAULT_MEDIAPIPE_MODEL,
         iris_data_dir: str | Path | None = DEFAULT_IRIS_DATA_DIR,
         model_device: str = "auto",
-        iris_device: str = "cpu",
+        iris_device: str = "auto",
         weights_path: str | Path | None = None,
         activation_function: str = DEFAULT_ACTIVATION_FUNCTION,
     ) -> None:
@@ -634,7 +634,7 @@ def build_gaze_estimator(
     mediapipe_model_path: str | Path = DEFAULT_MEDIAPIPE_MODEL,
     iris_data_dir: str | Path | None = DEFAULT_IRIS_DATA_DIR,
     model_device: str = "auto",
-    iris_device: str = "cpu",
+    iris_device: str = "auto",
     weights_path: str | Path | None = None,
     activation_function: str = DEFAULT_ACTIVATION_FUNCTION,
 ) -> GazeEstimator:
@@ -763,7 +763,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--device", default="auto", help="ANN model device: auto, cpu, cuda, etc."
     )
-    parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
+    parser.add_argument(
+        "--iris-device",
+        default="auto",
+        help="Iris detector device: auto, cpu, cuda, mps, etc.",
+    )
     parser.add_argument(
         "--weights",
         help=(

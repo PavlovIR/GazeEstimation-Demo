@@ -199,7 +199,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--device", default="auto", help="ANN model device: auto, cpu, cuda, etc."
     )
-    parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
+    parser.add_argument(
+        "--iris-device",
+        default="auto",
+        help="Iris detector device: auto, cpu, cuda, mps, etc.",
+    )
     return parser.parse_args()
 
 

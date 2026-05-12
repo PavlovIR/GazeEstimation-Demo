@@ -10,6 +10,7 @@ from torch import nn
 from torchvision.models import resnet18
 
 from IrisDetection import DetectionResult, Detector
+from runtime_device import resolve_torch_device_name
 
 
 _SUPPORTED_ACTIVATION_FUNCTIONS = ("relu", "leaky_relu")
@@ -306,11 +307,7 @@ def _missing_weights_message(activation_function: str) -> str:
 
 
 def _resolve_device(device: str) -> torch.device:
-    if device == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device.startswith("cuda") and not torch.cuda.is_available():
-        return torch.device("cpu")
-    return torch.device(device)
+    return torch.device(resolve_torch_device_name(device))
 
 
 class Estimator:
@@ -326,7 +323,9 @@ class Estimator:
         clamp_to_screen: bool = True,
         activation_function: str | None = None,
     ) -> None:
-        self.iris_detector = IrisDetector if IrisDetector is not None else Detector(device="cpu")
+        self.iris_detector = (
+            IrisDetector if IrisDetector is not None else Detector(device="auto")
+        )
         self.device = _resolve_device(device)
         self.screen_size = screen_size
         self.calibration_matrix = None if calibration_matrix is None else np.asarray(calibration_matrix, dtype=np.float32)
