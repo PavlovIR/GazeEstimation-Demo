@@ -23,7 +23,7 @@ DEFAULT_CONFIG = ROOT / "config.toml"
 DEFAULT_POINTS = ROOT / "points.csv"
 DEFAULT_CALIBRATION = ROOT / "calibration.json"
 DEFAULT_LOG_DIR = ROOT / "accuracy_runs"
-DEFAULT_ACTIVATION_FUNCTION = "leaky_relu"
+DEFAULT_ACTIVATION_FUNCTION = "relu"
 
 
 def _optional_path(path: Path) -> Path | None:
@@ -83,11 +83,31 @@ def _build_accuracy_ui() -> tuple[Screen | None, GazeAccuracyUI | None]:
 def _load_calibration(
     calibration_path=DEFAULT_CALIBRATION,
 ) -> DistanceAwareCalibration | None:
-    # if not calibration_path.exists():
-    #   return None
+    calibration_path = Path(calibration_path)
+    if not calibration_path.exists():
+        print(f"Calibration file not found at {calibration_path}; running uncalibrated.")
+        return None
     calibration = DistanceAwareCalibration.load(calibration_path)
     print(f"Loaded distance-aware calibration from {calibration_path}.")
     return calibration
+
+
+def _resolve_model_options(
+    args: argparse.Namespace, calibration: DistanceAwareCalibration | None
+) -> tuple[str, str | Path | None]:
+    calibration_activation = None
+    calibration_weights = None
+    if calibration is not None:
+        calibration_activation = calibration.metadata.get("activation_function")
+        calibration_weights = calibration.metadata.get("weights_path")
+
+    activation_function = (
+        args.activation
+        or (str(calibration_activation) if calibration_activation is not None else None)
+        or DEFAULT_ACTIVATION_FUNCTION
+    )
+    weights_path = args.weights or calibration_weights
+    return activation_function, weights_path
 
 
 def _check_calibration_model_match(
@@ -165,9 +185,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--activation",
-        default=DEFAULT_ACTIVATION_FUNCTION,
+        default=None,
         choices=("relu", "leaky_relu"),
-        help="Model activation variant to load.",
+        help=(
+            "Model activation variant to load. Defaults to calibration metadata, "
+            f"then {DEFAULT_ACTIVATION_FUNCTION}."
+        ),
     )
     parser.add_argument(
         "--calibration-file",
@@ -187,10 +210,11 @@ def main() -> None:
     calibration = _load_calibration(args.calibration_file)
     if screen_size is None and calibration is not None:
         screen_size = calibration.screen_size
+    activation_function, weights_path = _resolve_model_options(args, calibration)
     gaze_estimator = _build_gaze_estimator(
         screen_size=screen_size,
-        weights_path=args.weights,
-        activation_function=args.activation,
+        weights_path=weights_path,
+        activation_function=activation_function,
         model_device=args.device,
         iris_device=args.iris_device,
     )
@@ -207,8 +231,8 @@ def main() -> None:
         AccuracyLogger(
             str(DEFAULT_LOG_DIR),
             screen,
-            calibration_path=str(DEFAULT_CALIBRATION)
-            if DEFAULT_CALIBRATION.exists()
+            calibration_path=str(args.calibration_file)
+            if Path(args.calibration_file).exists()
             else None,
         )
         if screen is not None and accuracy_ui is not None

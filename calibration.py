@@ -317,7 +317,9 @@ class CalibrationWindow:
         self.screen_cfg = screen
         set_dpi_awareness()
         pygame.init()
-        self.surface = pygame.display.set_mode((screen.width_px, screen.height_px))
+        self.surface = pygame.display.set_mode(
+            (screen.width_px, screen.height_px), pygame.FULLSCREEN
+        )
         pygame.display.set_caption("Gaze calibration")
         self.title_font = pygame.font.SysFont("monospace", 34)
         self.font = pygame.font.SysFont("monospace", 22)
