@@ -45,7 +45,7 @@ class GazeDemoUI:
         self.block_num = int(block_num)
 
         self.screen = pygame.display.set_mode(
-            (self.screen_cfg.width_px, self.screen_cfg.height_px)
+            (self.screen_cfg.width_px, self.screen_cfg.height_px), pygame.FULLSCREEN
         )
         pygame.display.set_caption("Gaze demo grid (press ESC to exit)")
         self.font = pygame.font.SysFont("monospace", 18)

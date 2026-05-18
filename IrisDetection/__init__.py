@@ -9,6 +9,7 @@ from urllib.request import urlretrieve
 
 import numpy as np
 from PIL import Image, ImageOps
+from runtime_device import resolve_iris_device_name
 
 
 MEDIAPIPE_MODEL_URL = (
@@ -204,7 +205,7 @@ class Detector:
         self,
         mediapipe_model_path: str | Path | None = None,
         iris_data_dir: str | Path | None = None,
-        device: str = "cpu",
+        device: str = "auto",
         download_mediapipe_model: bool = True,
         face_crop_size: int = 224,
         eye_crop_size: int = 96,
@@ -219,7 +220,7 @@ class Detector:
     ) -> None:
         self.mediapipe_model_path = Path(mediapipe_model_path) if mediapipe_model_path else Path("assets/mediapipe/face_landmarker.task")
         self.iris_data_dir = self._resolve_iris_data_dir(iris_data_dir)
-        self.device = device
+        self.device = resolve_iris_device_name(device)
         self.download_mediapipe_model = download_mediapipe_model
         self.face_crop_size = face_crop_size
         self.eye_crop_size = eye_crop_size

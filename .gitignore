@@ -16,6 +16,11 @@ accuracy_runs/
 GazeEstimation/weights/*
 !GazeEstimation/weights/README.md
 
+# Calibration outputs
+calibration*.json
+
+# Local machine config
+config.toml
+
 # Other
-calibration.json
 *.mp4

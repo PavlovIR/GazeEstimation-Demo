@@ -15,15 +15,19 @@ from gaze_ui.Screen import Screen
 from GazeEstimation import EstimationResult
 from GazeEstimation import Estimator as GazeEstimator
 from IrisDetection import Detector as IrisDetector
+from run_parameters import (
+    DEFAULT_ACTIVATION_FUNCTION,
+    DEFAULT_RUN_PARAMETERS_PATH,
+    RunParameters,
+    load_run_parameters,
+    normalize_estimator_lib,
+)
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_MEDIAPIPE_MODEL = ROOT / "models" / "face_landmarker_v2_with_blendshapes.task"
 DEFAULT_IRIS_DATA_DIR = ROOT / "IrisDetection" / "data"
-DEFAULT_CONFIG = ROOT / "config.toml"
 DEFAULT_POINTS = ROOT / "points.csv"
-DEFAULT_CALIBRATION = ROOT / "calibration.json"
 DEFAULT_LOG_DIR = ROOT / "accuracy_runs"
-DEFAULT_ACTIVATION_FUNCTION = "leaky_relu"
 
 
 def _optional_path(path: Path) -> Path | None:
@@ -70,24 +74,50 @@ def _build_gaze_estimator(
     )
 
 
-def _build_accuracy_ui() -> tuple[Screen | None, GazeAccuracyUI | None]:
-    if not DEFAULT_CONFIG.exists():
-        print("config.toml not found; running without accuracy UI.")
+def _build_accuracy_ui(
+    config_path: str | Path,
+) -> tuple[Screen | None, GazeAccuracyUI | None]:
+    config_path = Path(config_path)
+    if not config_path.exists():
+        print(f"{config_path} not found; running without accuracy UI.")
         return None, None
 
-    screen = Screen(str(DEFAULT_CONFIG))
+    screen = Screen(str(config_path))
     points_path = str(DEFAULT_POINTS) if DEFAULT_POINTS.exists() else None
     return screen, GazeAccuracyUI(screen, points_path=points_path)
 
 
 def _load_calibration(
-    calibration_path=DEFAULT_CALIBRATION,
+    calibration_path: str | Path,
 ) -> DistanceAwareCalibration | None:
-    # if not calibration_path.exists():
-    #   return None
+    calibration_path = Path(calibration_path)
+    if not calibration_path.exists():
+        print(f"Calibration file not found at {calibration_path}; running uncalibrated.")
+        return None
     calibration = DistanceAwareCalibration.load(calibration_path)
     print(f"Loaded distance-aware calibration from {calibration_path}.")
     return calibration
+
+
+def _resolve_model_options(
+    args: argparse.Namespace,
+    calibration: DistanceAwareCalibration | None,
+    run_parameters: RunParameters,
+) -> tuple[str, str | Path | None]:
+    calibration_activation = None
+    calibration_weights = None
+    if calibration is not None:
+        calibration_activation = calibration.metadata.get("activation_function")
+        calibration_weights = calibration.metadata.get("weights_path")
+
+    activation_function = (
+        args.activation
+        or run_parameters.activation_function
+        or (str(calibration_activation) if calibration_activation is not None else None)
+        or DEFAULT_ACTIVATION_FUNCTION
+    )
+    weights_path = args.weights or run_parameters.weights or calibration_weights
+    return activation_function, weights_path
 
 
 def _check_calibration_model_match(
@@ -157,6 +187,19 @@ def _error_deg(error_mm: float | None, face_distance_mm: float | None) -> float 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run ANN gaze accuracy UI.")
     parser.add_argument(
+        "--run-parameters",
+        default=str(DEFAULT_RUN_PARAMETERS_PATH),
+        help="Path to shared run_parameters.toml.",
+    )
+    parser.add_argument(
+        "--estimator-lib",
+        help="Estimator library backend. Overrides run_parameters.toml.",
+    )
+    parser.add_argument(
+        "--screen-config",
+        help="Path to config.toml. Overrides run_parameters.toml.",
+    )
+    parser.add_argument(
         "--weights",
         help=(
             "Path to ANN checkpoint. If omitted, Estimator picks the default checkpoint "
@@ -165,37 +208,63 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--activation",
-        default=DEFAULT_ACTIVATION_FUNCTION,
+        default=None,
         choices=("relu", "leaky_relu"),
-        help="Model activation variant to load.",
+        help=(
+            "Model activation variant to load. Defaults to run_parameters.toml, "
+            "then calibration metadata."
+        ),
     )
     parser.add_argument(
         "--calibration-file",
-        default=DEFAULT_CALIBRATION,
+        help="Path to calibration JSON. Overrides run_parameters.toml.",
     )
     parser.add_argument(
         "--device", default="auto", help="ANN model device: auto, cpu, cuda, etc."
     )
-    parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
+    parser.add_argument(
+        "--iris-device",
+        default="auto",
+        help="Iris detector device: auto, cpu, cuda, mps, etc.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    screen, accuracy_ui = _build_accuracy_ui()
+    run_parameters = load_run_parameters(args.run_parameters)
+    estimator_lib = normalize_estimator_lib(
+        args.estimator_lib or run_parameters.estimator_lib
+    )
+    screen_config = (
+        Path(args.screen_config)
+        if args.screen_config is not None
+        else run_parameters.screen_config
+    )
+    calibration_path = (
+        Path(args.calibration_file)
+        if args.calibration_file is not None
+        else run_parameters.calibration_file
+    )
+
+    screen, accuracy_ui = _build_accuracy_ui(screen_config)
     screen_size = (screen.width_px, screen.height_px) if screen is not None else None
-    calibration = _load_calibration(args.calibration_file)
+    calibration = _load_calibration(calibration_path)
     if screen_size is None and calibration is not None:
         screen_size = calibration.screen_size
+    activation_function, weights_path = _resolve_model_options(
+        args, calibration, run_parameters
+    )
     gaze_estimator = _build_gaze_estimator(
         screen_size=screen_size,
-        weights_path=args.weights,
-        activation_function=args.activation,
+        weights_path=weights_path,
+        activation_function=activation_function,
         model_device=args.device,
         iris_device=args.iris_device,
     )
     print(
         "Loaded gaze model "
+        f"estimator_lib={estimator_lib}, "
         f"activation={gaze_estimator.activation_function}, "
         f"weights={gaze_estimator.weights_path}."
     )
@@ -207,8 +276,8 @@ def main() -> None:
         AccuracyLogger(
             str(DEFAULT_LOG_DIR),
             screen,
-            calibration_path=str(DEFAULT_CALIBRATION)
-            if DEFAULT_CALIBRATION.exists()
+            calibration_path=str(calibration_path)
+            if calibration_path.exists()
             else None,
         )
         if screen is not None and accuracy_ui is not None

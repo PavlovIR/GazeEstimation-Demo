@@ -1,0 +1,10 @@
+# Shared runtime settings used by main.py and demo.py.
+
+estimator_lib = "GazeEstimation"
+activation_function = "leaky_relu"
+screen_config = "config.toml"
+calibration_file = "calibration.json"
+
+# Optional checkpoint override. Leave this commented to use the default
+# checkpoint for activation_function, or calibration metadata in main.py.
+# weights = "GazeEstimation/weights/leaky_relu/best.pt"

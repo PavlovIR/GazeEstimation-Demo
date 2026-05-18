@@ -8,8 +8,6 @@ import numpy as np
 
 from calibration import (
     DEFAULT_ACTIVATION_FUNCTION,
-    DEFAULT_CALIBRATION_PATH,
-    DEFAULT_CONFIG_PATH,
     DEFAULT_IRIS_DATA_DIR,
     DEFAULT_MEDIAPIPE_MODEL,
     DistanceAwareCalibration,
@@ -19,6 +17,12 @@ from calibration import (
 from gaze_ui.DemoUi import GazeDemoUI
 from gaze_ui.Screen import Screen
 from GazeEstimation import EstimationResult
+from run_parameters import (
+    DEFAULT_RUN_PARAMETERS_PATH,
+    RunParameters,
+    load_run_parameters,
+    normalize_estimator_lib,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -42,7 +46,19 @@ class DemoScreenAdapter:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the calibrated gaze demo grid.")
-    parser.add_argument("--screen-config", default=str(DEFAULT_CONFIG_PATH), help="Path to config.toml.")
+    parser.add_argument(
+        "--run-parameters",
+        default=str(DEFAULT_RUN_PARAMETERS_PATH),
+        help="Path to shared run_parameters.toml.",
+    )
+    parser.add_argument(
+        "--estimator-lib",
+        help="Estimator library backend. Overrides run_parameters.toml.",
+    )
+    parser.add_argument(
+        "--screen-config",
+        help="Path to config.toml. Overrides run_parameters.toml.",
+    )
     parser.add_argument(
         "--calibration",
         help=(
@@ -59,7 +75,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video-fps", type=float, default=30.0, help="Frame rate for --video-output.")
     parser.add_argument("--fov-degrees", type=float, default=60.0, help="Approximate webcam horizontal FOV.")
     parser.add_argument("--device", default="auto", help="ANN model device: auto, cpu, cuda, etc.")
-    parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
+    parser.add_argument(
+        "--iris-device",
+        default="auto",
+        help="Iris detector device: auto, cpu, cuda, mps, etc.",
+    )
     parser.add_argument(
         "--standard-relu",
         action="store_true",
@@ -77,9 +97,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--activation",
-        default=DEFAULT_ACTIVATION_FUNCTION,
+        default=None,
         choices=("relu", "leaky_relu"),
-        help="Model activation variant to load.",
+        help="Model activation variant to load. Overrides run_parameters.toml.",
     )
     parser.add_argument("--block-num", type=int, default=4, help="Number of grid blocks per row/column.")
     parser.add_argument("--block-ratio", type=float, default=0.15, help="Block size relative to screen.")
@@ -88,20 +108,29 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_model_options(args: argparse.Namespace) -> tuple[str, str | None]:
+def resolve_model_options(
+    args: argparse.Namespace, run_parameters: RunParameters
+) -> tuple[str, str | Path | None]:
     if not args.standard_relu:
-        return args.activation, args.weights
+        return (
+            args.activation
+            or run_parameters.activation_function
+            or DEFAULT_ACTIVATION_FUNCTION,
+            args.weights or run_parameters.weights,
+        )
 
     weights = args.weights if args.weights is not None else str(DEFAULT_RELU_WEIGHTS_PATH)
     return "relu", weights
 
 
-def resolve_calibration_path(args: argparse.Namespace) -> Path:
+def resolve_calibration_path(
+    args: argparse.Namespace, run_parameters: RunParameters
+) -> Path:
     if args.calibration is not None:
         return Path(args.calibration)
     if args.standard_relu and DEFAULT_RELU_CALIBRATION_PATH.exists():
         return DEFAULT_RELU_CALIBRATION_PATH
-    return DEFAULT_CALIBRATION_PATH
+    return run_parameters.calibration_file
 
 
 def open_scene_video_writer(
@@ -131,14 +160,23 @@ def open_scene_video_writer(
 
 def main() -> None:
     args = parse_args()
-    activation_function, weights_path = resolve_model_options(args)
-    calibration_path = resolve_calibration_path(args)
+    run_parameters = load_run_parameters(args.run_parameters)
+    estimator_lib = normalize_estimator_lib(
+        args.estimator_lib or run_parameters.estimator_lib
+    )
+    screen_config = (
+        Path(args.screen_config)
+        if args.screen_config is not None
+        else run_parameters.screen_config
+    )
+    activation_function, weights_path = resolve_model_options(args, run_parameters)
+    calibration_path = resolve_calibration_path(args, run_parameters)
     if not calibration_path.exists():
         raise FileNotFoundError(
             f"Calibration file not found at {calibration_path}. Run calibration.py first."
         )
 
-    screen = Screen(args.screen_config)
+    screen = Screen(str(screen_config))
     calibration = DistanceAwareCalibration.load(calibration_path)
     gaze_estimator = build_gaze_estimator(
         screen_size=(screen.width_px, screen.height_px),
@@ -148,6 +186,12 @@ def main() -> None:
         iris_device=args.iris_device,
         weights_path=weights_path,
         activation_function=activation_function,
+    )
+    print(
+        "Loaded gaze model "
+        f"estimator_lib={estimator_lib}, "
+        f"activation={gaze_estimator.activation_function}, "
+        f"weights={gaze_estimator.weights_path}."
     )
     calibration_activation = calibration.metadata.get("activation_function")
     if calibration_activation is None:

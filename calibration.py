@@ -301,7 +301,7 @@ class FaceDistanceTracker:
         face_pos_cam_mm = self.estimator.estimate_3d_position(image_points)
         if face_pos_cam_mm is None:
             return None
-        return float(face_pos_cam_mm[2])
+        return abs(float(face_pos_cam_mm[2]))
 
 
 class CalibrationWindow:
@@ -317,7 +317,9 @@ class CalibrationWindow:
         self.screen_cfg = screen
         set_dpi_awareness()
         pygame.init()
-        self.surface = pygame.display.set_mode((screen.width_px, screen.height_px))
+        self.surface = pygame.display.set_mode(
+            (screen.width_px, screen.height_px), pygame.FULLSCREEN
+        )
         pygame.display.set_caption("Gaze calibration")
         self.title_font = pygame.font.SysFont("monospace", 34)
         self.font = pygame.font.SysFont("monospace", 22)
@@ -423,7 +425,7 @@ class AdvancedCalibrationPipeline:
         mediapipe_model_path: str | Path = DEFAULT_MEDIAPIPE_MODEL,
         iris_data_dir: str | Path | None = DEFAULT_IRIS_DATA_DIR,
         model_device: str = "auto",
-        iris_device: str = "cpu",
+        iris_device: str = "auto",
         weights_path: str | Path | None = None,
         activation_function: str = DEFAULT_ACTIVATION_FUNCTION,
     ) -> None:
@@ -632,7 +634,7 @@ def build_gaze_estimator(
     mediapipe_model_path: str | Path = DEFAULT_MEDIAPIPE_MODEL,
     iris_data_dir: str | Path | None = DEFAULT_IRIS_DATA_DIR,
     model_device: str = "auto",
-    iris_device: str = "cpu",
+    iris_device: str = "auto",
     weights_path: str | Path | None = None,
     activation_function: str = DEFAULT_ACTIVATION_FUNCTION,
 ) -> GazeEstimator:
@@ -761,7 +763,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--device", default="auto", help="ANN model device: auto, cpu, cuda, etc."
     )
-    parser.add_argument("--iris-device", default="cpu", help="Iris detector device.")
+    parser.add_argument(
+        "--iris-device",
+        default="auto",
+        help="Iris detector device: auto, cpu, cuda, mps, etc.",
+    )
     parser.add_argument(
         "--weights",
         help=(
