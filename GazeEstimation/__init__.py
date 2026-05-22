@@ -10,7 +10,7 @@ from torch import nn
 from torchvision.models import resnet18
 
 from IrisDetection import DetectionResult, Detector
-from runtime_device import resolve_torch_device_name
+from Env.runtime_device import resolve_torch_device_name
 
 
 _SUPPORTED_ACTIVATION_FUNCTIONS = ("relu", "leaky_relu")

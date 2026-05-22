@@ -1,0 +1,962 @@
+{
+  "version": 1,
+  "created_at": "2026-05-18T17:45:05.342806+00:00",
+  "screen_size": [
+    2560,
+    1600
+  ],
+  "global_matrix": [
+    [
+      257.3298645019531,
+      7.465653419494629,
+      819.971923828125
+    ],
+    [
+      12.07987117767334,
+      -150.44760131835938,
+      113.21012115478516
+    ]
+  ],
+  "distance_bins": [
+    {
+      "stage": "near",
+      "distance_mm": 390.61802499362386,
+      "matrix": [
+        [
+          285.5411376953125,
+          -0.25119292736053467,
+          1068.805419921875
+        ],
+        [
+          -18.98415184020996,
+          -162.75225830078125,
+          15.811151504516602
+        ]
+      ],
+      "sample_count": 21
+    },
+    {
+      "stage": "normal",
+      "distance_mm": 672.1367414222425,
+      "matrix": [
+        [
+          304.1955871582031,
+          134.76942443847656,
+          1039.718994140625
+        ],
+        [
+          -8.61387825012207,
+          -327.93756103515625,
+          -243.277587890625
+        ]
+      ],
+      "sample_count": 21
+    },
+    {
+      "stage": "far",
+      "distance_mm": 911.1528446699529,
+      "matrix": [
+        [
+          276.4168395996094,
+          -82.44155883789062,
+          90.17180633544922
+        ],
+        [
+          47.83971405029297,
+          251.56031799316406,
+          1947.046875
+        ]
+      ],
+      "sample_count": 21
+    }
+  ],
+  "samples": [
+    {
+      "stage": "near",
+      "point_index": 1,
+      "target_xy": [
+        51.0,
+        32.0
+      ],
+      "raw_xy": [
+        -0.022816210985183716,
+        -1.168392300605774
+      ],
+      "face_distance_mm": 354.9084249479599,
+      "frame_count": 5
+    },
+    {
+      "stage": "near",
+      "point_index": 2,
+      "target_xy": [
+        1280.0,
+        32.0
+      ],
+      "raw_xy": [
+        -0.7478376626968384,
+        -0.3533702492713928
+      ],
+      "face_distance_mm": 354.8540223284707,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 3,
+      "target_xy": [
+        2509.0,
+        32.0
+      ],
+      "raw_xy": [
+        5.475240230560303,
+        -0.573090672492981
+      ],
+      "face_distance_mm": 353.9482678164792,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 4,
+      "target_xy": [
+        51.0,
+        800.0
+      ],
+      "raw_xy": [
+        -4.617496967315674,
+        -2.7587544918060303
+      ],
+      "face_distance_mm": 359.9661001172159,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 5,
+      "target_xy": [
+        2509.0,
+        800.0
+      ],
+      "raw_xy": [
+        2.035858631134033,
+        -4.65021276473999
+      ],
+      "face_distance_mm": 357.6163785244905,
+      "frame_count": 37
+    },
+    {
+      "stage": "near",
+      "point_index": 6,
+      "target_xy": [
+        51.0,
+        1568.0
+      ],
+      "raw_xy": [
+        -2.039677143096924,
+        -6.387323379516602
+      ],
+      "face_distance_mm": 360.0172771307856,
+      "frame_count": 34
+    },
+    {
+      "stage": "near",
+      "point_index": 7,
+      "target_xy": [
+        1280.0,
+        1568.0
+      ],
+      "raw_xy": [
+        2.7258784770965576,
+        -5.555056571960449
+      ],
+      "face_distance_mm": 359.94051088219953,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 8,
+      "target_xy": [
+        2509.0,
+        1568.0
+      ],
+      "raw_xy": [
+        2.1014440059661865,
+        -5.8844709396362305
+      ],
+      "face_distance_mm": 369.32196039175665,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 9,
+      "target_xy": [
+        1280.0,
+        800.0
+      ],
+      "raw_xy": [
+        1.239829182624817,
+        -8.29417610168457
+      ],
+      "face_distance_mm": 380.9975620243689,
+      "frame_count": 35
+    },
+    {
+      "stage": "near",
+      "point_index": 10,
+      "target_xy": [
+        256.0,
+        160.0
+      ],
+      "raw_xy": [
+        -1.3840724229812622,
+        -4.581099987030029
+      ],
+      "face_distance_mm": 379.6151037202959,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 11,
+      "target_xy": [
+        2304.0,
+        160.0
+      ],
+      "raw_xy": [
+        3.5359444618225098,
+        -1.8826953172683716
+      ],
+      "face_distance_mm": 390.61802499362386,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 12,
+      "target_xy": [
+        256.0,
+        1440.0
+      ],
+      "raw_xy": [
+        -2.303536891937256,
+        -8.204338073730469
+      ],
+      "face_distance_mm": 394.41529168754175,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 13,
+      "target_xy": [
+        2304.0,
+        1440.0
+      ],
+      "raw_xy": [
+        2.933534622192383,
+        -7.235415458679199
+      ],
+      "face_distance_mm": 394.28760731569173,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 14,
+      "target_xy": [
+        640.0,
+        400.0
+      ],
+      "raw_xy": [
+        -0.8474200367927551,
+        -2.1262054443359375
+      ],
+      "face_distance_mm": 391.32406934242726,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 15,
+      "target_xy": [
+        1920.0,
+        400.0
+      ],
+      "raw_xy": [
+        3.6182339191436768,
+        -3.1579251289367676
+      ],
+      "face_distance_mm": 390.62014323226765,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 16,
+      "target_xy": [
+        640.0,
+        1200.0
+      ],
+      "raw_xy": [
+        -2.8335232734680176,
+        -6.279696464538574
+      ],
+      "face_distance_mm": 393.7841299913498,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 17,
+      "target_xy": [
+        1920.0,
+        1200.0
+      ],
+      "raw_xy": [
+        3.929936647415161,
+        -8.647978782653809
+      ],
+      "face_distance_mm": 395.2295720529295,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 18,
+      "target_xy": [
+        1280.0,
+        400.0
+      ],
+      "raw_xy": [
+        -0.03182502090930939,
+        -4.665365695953369
+      ],
+      "face_distance_mm": 393.32522513034394,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 19,
+      "target_xy": [
+        1280.0,
+        1200.0
+      ],
+      "raw_xy": [
+        1.8723500967025757,
+        -8.529205322265625
+      ],
+      "face_distance_mm": 394.62773946447857,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 20,
+      "target_xy": [
+        640.0,
+        800.0
+      ],
+      "raw_xy": [
+        -1.8586270809173584,
+        -5.061131000518799
+      ],
+      "face_distance_mm": 395.1133256540272,
+      "frame_count": 36
+    },
+    {
+      "stage": "near",
+      "point_index": 21,
+      "target_xy": [
+        1920.0,
+        800.0
+      ],
+      "raw_xy": [
+        2.660201072692871,
+        -6.989527702331543
+      ],
+      "face_distance_mm": 394.3945668744202,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 1,
+      "target_xy": [
+        51.0,
+        32.0
+      ],
+      "raw_xy": [
+        -3.6502978801727295,
+        -0.870036244392395
+      ],
+      "face_distance_mm": 685.7124196125544,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 2,
+      "target_xy": [
+        1280.0,
+        32.0
+      ],
+      "raw_xy": [
+        0.3701881766319275,
+        -1.8551926612854004
+      ],
+      "face_distance_mm": 672.4119549722955,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 3,
+      "target_xy": [
+        2509.0,
+        32.0
+      ],
+      "raw_xy": [
+        5.678149223327637,
+        -1.0004805326461792
+      ],
+      "face_distance_mm": 670.2460382072725,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 4,
+      "target_xy": [
+        51.0,
+        800.0
+      ],
+      "raw_xy": [
+        -2.4948973655700684,
+        -2.735800266265869
+      ],
+      "face_distance_mm": 672.1367414222425,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 5,
+      "target_xy": [
+        2509.0,
+        800.0
+      ],
+      "raw_xy": [
+        6.3132524490356445,
+        -3.376896619796753
+      ],
+      "face_distance_mm": 668.275669170911,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 6,
+      "target_xy": [
+        51.0,
+        1568.0
+      ],
+      "raw_xy": [
+        -0.2863326072692871,
+        -3.820657968521118
+      ],
+      "face_distance_mm": 675.5191584945185,
+      "frame_count": 35
+    },
+    {
+      "stage": "normal",
+      "point_index": 7,
+      "target_xy": [
+        1280.0,
+        1568.0
+      ],
+      "raw_xy": [
+        3.2574703693389893,
+        -4.457846164703369
+      ],
+      "face_distance_mm": 674.7169906116491,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 8,
+      "target_xy": [
+        2509.0,
+        1568.0
+      ],
+      "raw_xy": [
+        7.318248271942139,
+        -4.593155860900879
+      ],
+      "face_distance_mm": 672.6381195502622,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 9,
+      "target_xy": [
+        1280.0,
+        800.0
+      ],
+      "raw_xy": [
+        2.393420457839966,
+        -3.693178176879883
+      ],
+      "face_distance_mm": 674.7533893299008,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 10,
+      "target_xy": [
+        256.0,
+        160.0
+      ],
+      "raw_xy": [
+        -0.7973502278327942,
+        -1.2791309356689453
+      ],
+      "face_distance_mm": 673.4222318893076,
+      "frame_count": 37
+    },
+    {
+      "stage": "normal",
+      "point_index": 11,
+      "target_xy": [
+        2304.0,
+        160.0
+      ],
+      "raw_xy": [
+        3.749814510345459,
+        -0.3898667097091675
+      ],
+      "face_distance_mm": 670.331789914447,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 12,
+      "target_xy": [
+        256.0,
+        1440.0
+      ],
+      "raw_xy": [
+        0.12773096561431885,
+        -3.933673143386841
+      ],
+      "face_distance_mm": 675.7570787525717,
+      "frame_count": 37
+    },
+    {
+      "stage": "normal",
+      "point_index": 13,
+      "target_xy": [
+        2304.0,
+        1440.0
+      ],
+      "raw_xy": [
+        5.918606758117676,
+        -5.793236255645752
+      ],
+      "face_distance_mm": 675.2616479123024,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 14,
+      "target_xy": [
+        640.0,
+        400.0
+      ],
+      "raw_xy": [
+        0.8597967624664307,
+        -2.74459171295166
+      ],
+      "face_distance_mm": 673.0319243368657,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 15,
+      "target_xy": [
+        1920.0,
+        400.0
+      ],
+      "raw_xy": [
+        2.4626054763793945,
+        -3.1468353271484375
+      ],
+      "face_distance_mm": 670.2583478230697,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 16,
+      "target_xy": [
+        640.0,
+        1200.0
+      ],
+      "raw_xy": [
+        2.0253732204437256,
+        -5.16934871673584
+      ],
+      "face_distance_mm": 669.0196647988269,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 17,
+      "target_xy": [
+        1920.0,
+        1200.0
+      ],
+      "raw_xy": [
+        1.934017539024353,
+        -4.922991752624512
+      ],
+      "face_distance_mm": 669.0196647988269,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 18,
+      "target_xy": [
+        1280.0,
+        400.0
+      ],
+      "raw_xy": [
+        2.131620168685913,
+        -2.945711135864258
+      ],
+      "face_distance_mm": 666.8343051390074,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 19,
+      "target_xy": [
+        1280.0,
+        1200.0
+      ],
+      "raw_xy": [
+        3.636774778366089,
+        -4.867445945739746
+      ],
+      "face_distance_mm": 670.5676191848379,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 20,
+      "target_xy": [
+        640.0,
+        800.0
+      ],
+      "raw_xy": [
+        0.9818018674850464,
+        -2.8692212104797363
+      ],
+      "face_distance_mm": 669.5170241566257,
+      "frame_count": 36
+    },
+    {
+      "stage": "normal",
+      "point_index": 21,
+      "target_xy": [
+        1920.0,
+        800.0
+      ],
+      "raw_xy": [
+        4.799770355224609,
+        -3.57007098197937
+      ],
+      "face_distance_mm": 668.3414635096393,
+      "frame_count": 37
+    },
+    {
+      "stage": "far",
+      "point_index": 1,
+      "target_xy": [
+        51.0,
+        32.0
+      ],
+      "raw_xy": [
+        -0.6423094272613525,
+        -5.074431419372559
+      ],
+      "face_distance_mm": 913.06039291687,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 2,
+      "target_xy": [
+        1280.0,
+        32.0
+      ],
+      "raw_xy": [
+        0.38942384719848633,
+        -5.462815761566162
+      ],
+      "face_distance_mm": 907.1026603329933,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 3,
+      "target_xy": [
+        2509.0,
+        32.0
+      ],
+      "raw_xy": [
+        5.077132225036621,
+        -4.622500419616699
+      ],
+      "face_distance_mm": 910.3663575091658,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 4,
+      "target_xy": [
+        51.0,
+        800.0
+      ],
+      "raw_xy": [
+        -1.4417405128479004,
+        -5.703849792480469
+      ],
+      "face_distance_mm": 914.8210820551209,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 5,
+      "target_xy": [
+        2509.0,
+        800.0
+      ],
+      "raw_xy": [
+        7.112090110778809,
+        -5.335885047912598
+      ],
+      "face_distance_mm": 908.0792237355892,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 6,
+      "target_xy": [
+        51.0,
+        1568.0
+      ],
+      "raw_xy": [
+        -0.9680588841438293,
+        -4.388928413391113
+      ],
+      "face_distance_mm": 909.20360968409,
+      "frame_count": 34
+    },
+    {
+      "stage": "far",
+      "point_index": 7,
+      "target_xy": [
+        1280.0,
+        1568.0
+      ],
+      "raw_xy": [
+        3.80067777633667,
+        -4.258271217346191
+      ],
+      "face_distance_mm": 910.5049327350774,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 8,
+      "target_xy": [
+        2509.0,
+        1568.0
+      ],
+      "raw_xy": [
+        7.291954040527344,
+        -5.038936614990234
+      ],
+      "face_distance_mm": 908.8659836361003,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 9,
+      "target_xy": [
+        1280.0,
+        800.0
+      ],
+      "raw_xy": [
+        2.3097786903381348,
+        -4.7737932205200195
+      ],
+      "face_distance_mm": 908.2332305452887,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 10,
+      "target_xy": [
+        256.0,
+        160.0
+      ],
+      "raw_xy": [
+        -0.9149993658065796,
+        -4.984669208526611
+      ],
+      "face_distance_mm": 911.1528446699529,
+      "frame_count": 37
+    },
+    {
+      "stage": "far",
+      "point_index": 11,
+      "target_xy": [
+        2304.0,
+        160.0
+      ],
+      "raw_xy": [
+        6.397783279418945,
+        -4.986174583435059
+      ],
+      "face_distance_mm": 912.5268672531171,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 12,
+      "target_xy": [
+        256.0,
+        1440.0
+      ],
+      "raw_xy": [
+        0.40719056129455566,
+        -3.8977086544036865
+      ],
+      "face_distance_mm": 917.5068432872899,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 13,
+      "target_xy": [
+        2304.0,
+        1440.0
+      ],
+      "raw_xy": [
+        6.904841423034668,
+        -6.388028144836426
+      ],
+      "face_distance_mm": 909.9410280684692,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 14,
+      "target_xy": [
+        640.0,
+        400.0
+      ],
+      "raw_xy": [
+        0.3267895579338074,
+        -5.522241115570068
+      ],
+      "face_distance_mm": 910.2131989912524,
+      "frame_count": 37
+    },
+    {
+      "stage": "far",
+      "point_index": 15,
+      "target_xy": [
+        1920.0,
+        400.0
+      ],
+      "raw_xy": [
+        4.111669540405273,
+        -5.416051864624023
+      ],
+      "face_distance_mm": 906.6885911712905,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 16,
+      "target_xy": [
+        640.0,
+        1200.0
+      ],
+      "raw_xy": [
+        0.8010299205780029,
+        -4.099217414855957
+      ],
+      "face_distance_mm": 911.8927743804659,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 17,
+      "target_xy": [
+        1920.0,
+        1200.0
+      ],
+      "raw_xy": [
+        5.101831436157227,
+        -5.662971496582031
+      ],
+      "face_distance_mm": 913.0500564268364,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 18,
+      "target_xy": [
+        1280.0,
+        400.0
+      ],
+      "raw_xy": [
+        2.810856342315674,
+        -5.411695957183838
+      ],
+      "face_distance_mm": 911.6302928649044,
+      "frame_count": 37
+    },
+    {
+      "stage": "far",
+      "point_index": 19,
+      "target_xy": [
+        1280.0,
+        1200.0
+      ],
+      "raw_xy": [
+        2.263502836227417,
+        -5.538247108459473
+      ],
+      "face_distance_mm": 916.5552853894893,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 20,
+      "target_xy": [
+        640.0,
+        800.0
+      ],
+      "raw_xy": [
+        0.8222584128379822,
+        -4.656373500823975
+      ],
+      "face_distance_mm": 915.9459748510047,
+      "frame_count": 36
+    },
+    {
+      "stage": "far",
+      "point_index": 21,
+      "target_xy": [
+        1920.0,
+        800.0
+      ],
+      "raw_xy": [
+        6.554409980773926,
+        -5.659638404846191
+      ],
+      "face_distance_mm": 912.1889787155726,
+      "frame_count": 36
+    }
+  ],
+  "metadata": {
+    "estimator_lib": "GazeCaptureEstimator",
+    "activation_function": "n/a",
+    "weights_path": "C:\\Users\\Merlin\\Projects\\ann-ui\\GazeCaptureEstimator\\checkpoint.pth.tar"
+  }
+}

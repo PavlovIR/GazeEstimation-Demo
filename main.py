@@ -12,26 +12,24 @@ from calibration import (
 from gaze_ui.accuracy_logger import AccuracyLogger
 from gaze_ui.AccuracyUi import GazeAccuracyUI
 from gaze_ui.Screen import Screen
-from GazeEstimation import EstimationResult
-from GazeEstimation import Estimator as GazeEstimator
-from IrisDetection import Detector as IrisDetector
-from run_parameters import (
+from Env.run_parameters import (
     DEFAULT_ACTIVATION_FUNCTION,
     DEFAULT_RUN_PARAMETERS_PATH,
     RunParameters,
     load_run_parameters,
     normalize_estimator_lib,
 )
+from Env.runtime_estimator import (
+    RuntimeEstimationResult,
+    build_runtime_gaze_estimator,
+    calibration_metadata_matches_estimator,
+)
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_MEDIAPIPE_MODEL = ROOT / "models" / "face_landmarker_v2_with_blendshapes.task"
 DEFAULT_IRIS_DATA_DIR = ROOT / "IrisDetection" / "data"
-DEFAULT_POINTS = ROOT / "points.csv"
+DEFAULT_POINTS = ROOT / "csv_points" / "points.csv"
 DEFAULT_LOG_DIR = ROOT / "accuracy_runs"
-
-
-def _optional_path(path: Path) -> Path | None:
-    return path if path.exists() else None
 
 
 def _opencv_has_gui() -> bool:
@@ -51,27 +49,6 @@ def _console_quit_requested() -> bool:
         if msvcrt.getwch().lower() == "q":
             return True
     return False
-
-
-def _build_gaze_estimator(
-    screen_size: tuple[int, int] | None,
-    weights_path: str | Path | None,
-    activation_function: str,
-    model_device: str,
-    iris_device: str,
-) -> GazeEstimator:
-    iris_detector = IrisDetector(
-        mediapipe_model_path=_optional_path(DEFAULT_MEDIAPIPE_MODEL),
-        iris_data_dir=_optional_path(DEFAULT_IRIS_DATA_DIR),
-        device=iris_device,
-    )
-    return GazeEstimator(
-        IrisDetector=iris_detector,
-        weights_path=weights_path,
-        screen_size=screen_size,
-        device=model_device,
-        activation_function=activation_function,
-    )
 
 
 def _build_accuracy_ui(
@@ -103,12 +80,11 @@ def _resolve_model_options(
     args: argparse.Namespace,
     calibration: DistanceAwareCalibration | None,
     run_parameters: RunParameters,
+    estimator_lib: str,
 ) -> tuple[str, str | Path | None]:
     calibration_activation = None
-    calibration_weights = None
     if calibration is not None:
         calibration_activation = calibration.metadata.get("activation_function")
-        calibration_weights = calibration.metadata.get("weights_path")
 
     activation_function = (
         args.activation
@@ -116,15 +92,72 @@ def _resolve_model_options(
         or (str(calibration_activation) if calibration_activation is not None else None)
         or DEFAULT_ACTIVATION_FUNCTION
     )
-    weights_path = args.weights or run_parameters.weights or calibration_weights
+    weights_path = (
+        args.weights
+        or run_parameters.weights
+        or _calibration_weights_for_estimator(calibration, estimator_lib)
+    )
     return activation_function, weights_path
+
+
+def _calibration_weights_for_estimator(
+    calibration: DistanceAwareCalibration | None,
+    estimator_lib: str,
+) -> str | None:
+    if calibration is None:
+        return None
+
+    weights_path = calibration.metadata.get("weights_path")
+    if weights_path is None:
+        return None
+
+    metadata_match = calibration_metadata_matches_estimator(
+        calibration.metadata,
+        estimator_lib,
+    )
+    if metadata_match is False:
+        return None
+    if metadata_match is None and estimator_lib != "GazeEstimation":
+        return None
+    return str(weights_path)
 
 
 def _check_calibration_model_match(
     calibration: DistanceAwareCalibration | None,
-    gaze_estimator: GazeEstimator,
+    gaze_estimator,
 ) -> None:
     if calibration is None:
+        return
+
+    estimator_lib = gaze_estimator.estimator_lib
+    metadata_match = calibration_metadata_matches_estimator(
+        calibration.metadata,
+        estimator_lib,
+    )
+    if metadata_match is False:
+        raise RuntimeError(
+            "Calibration/model mismatch: "
+            f"calibration was collected with estimator_lib={calibration.metadata.get('estimator_lib')!r}, "
+            f"but runtime loaded estimator_lib={estimator_lib!r}."
+        )
+    if metadata_match is None and estimator_lib == "GazeCaptureEstimator":
+        print(
+            "Warning: calibration file has no estimator_lib metadata. "
+            "Make sure it was collected with GazeCaptureEstimator; ANN calibration "
+            "will not map GazeCapture raw outputs correctly."
+        )
+
+    if estimator_lib != "GazeEstimation":
+        weights_path = calibration.metadata.get("weights_path")
+        if (
+            metadata_match is True
+            and weights_path is not None
+            and Path(weights_path) != Path(gaze_estimator.weights_path)
+        ):
+            print(
+                "Warning: calibration file was collected with a different weights path: "
+                f"{weights_path!r}; runtime uses {str(gaze_estimator.weights_path)!r}."
+            )
         return
 
     activation = calibration.metadata.get("activation_function")
@@ -153,7 +186,7 @@ def _check_calibration_model_match(
 
 
 def _face_bbox_xyxy(
-    result: EstimationResult | None,
+    result: RuntimeEstimationResult | None,
 ) -> tuple[float, float, float, float] | None:
     if result is None:
         return None
@@ -185,7 +218,7 @@ def _error_deg(error_mm: float | None, face_distance_mm: float | None) -> float 
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run ANN gaze accuracy UI.")
+    parser = argparse.ArgumentParser(description="Run gaze accuracy UI.")
     parser.add_argument(
         "--run-parameters",
         default=str(DEFAULT_RUN_PARAMETERS_PATH),
@@ -202,8 +235,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--weights",
         help=(
-            "Path to ANN checkpoint. If omitted, Estimator picks the default checkpoint "
-            "for --activation."
+            "Path to estimator checkpoint. If omitted, the selected backend picks "
+            "its default checkpoint."
         ),
     )
     parser.add_argument(
@@ -220,7 +253,7 @@ def parse_args() -> argparse.Namespace:
         help="Path to calibration JSON. Overrides run_parameters.toml.",
     )
     parser.add_argument(
-        "--device", default="auto", help="ANN model device: auto, cpu, cuda, etc."
+        "--device", default="auto", help="Model device: auto, cpu, cuda, etc."
     )
     parser.add_argument(
         "--iris-device",
@@ -253,14 +286,18 @@ def main() -> None:
     if screen_size is None and calibration is not None:
         screen_size = calibration.screen_size
     activation_function, weights_path = _resolve_model_options(
-        args, calibration, run_parameters
+        args, calibration, run_parameters, estimator_lib
     )
-    gaze_estimator = _build_gaze_estimator(
+    gaze_estimator = build_runtime_gaze_estimator(
+        estimator_lib=estimator_lib,
+        screen=screen,
         screen_size=screen_size,
         weights_path=weights_path,
         activation_function=activation_function,
         model_device=args.device,
         iris_device=args.iris_device,
+        mediapipe_model_path=DEFAULT_MEDIAPIPE_MODEL,
+        iris_data_dir=DEFAULT_IRIS_DATA_DIR,
     )
     print(
         "Loaded gaze model "
@@ -334,6 +371,8 @@ def main() -> None:
 
             try:
                 result = gaze_estimator.predict(rgb_frame, return_details=True)
+                if not isinstance(result, RuntimeEstimationResult):
+                    raise RuntimeError("Estimator did not return detailed output.")
                 if calibration is not None:
                     face_distance_mm = (
                         distance_tracker.estimate(frame)

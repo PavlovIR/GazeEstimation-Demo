@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parent
-DEFAULT_RUN_PARAMETERS_PATH = ROOT / "run_parameters.toml"
-DEFAULT_SCREEN_CONFIG_PATH = ROOT / "config.toml"
-DEFAULT_CALIBRATION_PATH = ROOT / "calibration.json"
+ENV_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = ENV_DIR.parent
+DEFAULT_RUN_PARAMETERS_PATH = ENV_DIR / "run_parameters.toml"
+DEFAULT_SCREEN_CONFIG_PATH = PROJECT_ROOT / "calibration" / "config.toml"
+DEFAULT_CALIBRATION_PATH = PROJECT_ROOT / "calibration" / "calibration.json"
 DEFAULT_ESTIMATOR_LIB = "GazeEstimation"
 DEFAULT_ACTIVATION_FUNCTION = "leaky_relu"
 
@@ -18,6 +19,11 @@ _ESTIMATOR_LIB_ALIASES = {
     "gaze_estimation": "GazeEstimation",
     "gazeestimation.estimator": "GazeEstimation",
     "ann": "GazeEstimation",
+    "gazecaptureestimator": "GazeCaptureEstimator",
+    "gaze_capture_estimator": "GazeCaptureEstimator",
+    "gaze_capture": "GazeCaptureEstimator",
+    "gazecapture": "GazeCaptureEstimator",
+    "gc": "GazeCaptureEstimator",
 }
 
 
@@ -41,7 +47,7 @@ def load_run_parameters(path: str | Path = DEFAULT_RUN_PARAMETERS_PATH) -> RunPa
     if not isinstance(payload, dict):
         raise ValueError(f"{parameters_path} must contain TOML key/value settings.")
 
-    base_dir = parameters_path.resolve().parent
+    base_dir = PROJECT_ROOT
     return RunParameters(
         estimator_lib=_string_value(
             payload,

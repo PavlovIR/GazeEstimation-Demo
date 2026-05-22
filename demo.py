@@ -12,22 +12,25 @@ from calibration import (
     DEFAULT_MEDIAPIPE_MODEL,
     DistanceAwareCalibration,
     FaceDistanceTracker,
-    build_gaze_estimator,
 )
 from gaze_ui.DemoUi import GazeDemoUI
 from gaze_ui.Screen import Screen
-from GazeEstimation import EstimationResult
-from run_parameters import (
+from Env.run_parameters import (
     DEFAULT_RUN_PARAMETERS_PATH,
     RunParameters,
     load_run_parameters,
     normalize_estimator_lib,
 )
+from Env.runtime_estimator import (
+    RuntimeEstimationResult,
+    build_runtime_gaze_estimator,
+    calibration_metadata_matches_estimator,
+)
 
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_RELU_WEIGHTS_PATH = ROOT / "GazeEstimation" / "weights" / "best.pt"
-DEFAULT_RELU_CALIBRATION_PATH = ROOT / "calibration-relu.json"
+DEFAULT_RELU_CALIBRATION_PATH = ROOT / "calibration" / "calibration-relu.json"
 
 
 class DemoScreenAdapter:
@@ -74,7 +77,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--video-fps", type=float, default=30.0, help="Frame rate for --video-output.")
     parser.add_argument("--fov-degrees", type=float, default=60.0, help="Approximate webcam horizontal FOV.")
-    parser.add_argument("--device", default="auto", help="ANN model device: auto, cpu, cuda, etc.")
+    parser.add_argument("--device", default="auto", help="Model device: auto, cpu, cuda, etc.")
     parser.add_argument(
         "--iris-device",
         default="auto",
@@ -91,8 +94,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--weights",
         help=(
-            "Path to ANN checkpoint. If omitted, Estimator picks the default checkpoint "
-            "for --activation."
+            "Path to estimator checkpoint. If omitted, the selected backend picks "
+            "its default checkpoint."
         ),
     )
     parser.add_argument(
@@ -109,7 +112,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_model_options(
-    args: argparse.Namespace, run_parameters: RunParameters
+    args: argparse.Namespace,
+    run_parameters: RunParameters,
 ) -> tuple[str, str | Path | None]:
     if not args.standard_relu:
         return (
@@ -158,12 +162,75 @@ def open_scene_video_writer(
     return writer
 
 
+def check_calibration_model_match(
+    calibration: DistanceAwareCalibration,
+    gaze_estimator,
+) -> None:
+    estimator_lib = gaze_estimator.estimator_lib
+    metadata_match = calibration_metadata_matches_estimator(
+        calibration.metadata,
+        estimator_lib,
+    )
+    if metadata_match is False:
+        raise RuntimeError(
+            "Calibration/model mismatch: "
+            f"calibration was collected with estimator_lib={calibration.metadata.get('estimator_lib')!r}, "
+            f"but demo loaded estimator_lib={estimator_lib!r}."
+        )
+    if metadata_match is None and estimator_lib == "GazeCaptureEstimator":
+        print(
+            "Warning: calibration file has no estimator_lib metadata. "
+            "Make sure it was collected with GazeCaptureEstimator; ANN calibration "
+            "will not map GazeCapture raw outputs correctly."
+        )
+
+    if estimator_lib != "GazeEstimation":
+        calibration_weights = calibration.metadata.get("weights_path")
+        if (
+            metadata_match is True
+            and calibration_weights is not None
+            and Path(calibration_weights) != Path(gaze_estimator.weights_path)
+        ):
+            print(
+                "Warning: calibration file was collected with a different weights path: "
+                f"{calibration_weights!r}; demo uses {str(gaze_estimator.weights_path)!r}."
+            )
+        return
+
+    calibration_activation = calibration.metadata.get("activation_function")
+    if calibration_activation is None:
+        print(
+            "Warning: calibration file has no activation metadata. "
+            "Re-run calibration.py for reliable Leaky ReLU calibration."
+        )
+    elif str(calibration_activation) != gaze_estimator.activation_function:
+        raise RuntimeError(
+            "Calibration/model mismatch: "
+            f"calibration was collected with activation={calibration_activation!r}, "
+            f"but demo loaded activation={gaze_estimator.activation_function!r}. "
+            "Re-run calibration.py with the same --activation/--weights settings. "
+            "For standard ReLU, use: calibration.py --activation relu "
+            "--weights GazeEstimation/weights/best.pt --output calibration-relu.json"
+        )
+
+    calibration_weights = calibration.metadata.get("weights_path")
+    if calibration_weights is not None and Path(calibration_weights) != Path(
+        gaze_estimator.weights_path
+    ):
+        print(
+            "Warning: calibration file was collected with a different weights path: "
+            f"{calibration_weights!r}; demo uses {str(gaze_estimator.weights_path)!r}."
+        )
+
+
 def main() -> None:
     args = parse_args()
     run_parameters = load_run_parameters(args.run_parameters)
     estimator_lib = normalize_estimator_lib(
         args.estimator_lib or run_parameters.estimator_lib
     )
+    if args.standard_relu:
+        estimator_lib = "GazeEstimation"
     screen_config = (
         Path(args.screen_config)
         if args.screen_config is not None
@@ -178,14 +245,16 @@ def main() -> None:
 
     screen = Screen(str(screen_config))
     calibration = DistanceAwareCalibration.load(calibration_path)
-    gaze_estimator = build_gaze_estimator(
+    gaze_estimator = build_runtime_gaze_estimator(
+        estimator_lib=estimator_lib,
+        screen=screen,
         screen_size=(screen.width_px, screen.height_px),
-        mediapipe_model_path=DEFAULT_MEDIAPIPE_MODEL,
-        iris_data_dir=DEFAULT_IRIS_DATA_DIR,
-        model_device=args.device,
-        iris_device=args.iris_device,
         weights_path=weights_path,
         activation_function=activation_function,
+        model_device=args.device,
+        iris_device=args.iris_device,
+        mediapipe_model_path=DEFAULT_MEDIAPIPE_MODEL,
+        iris_data_dir=DEFAULT_IRIS_DATA_DIR,
     )
     print(
         "Loaded gaze model "
@@ -193,27 +262,7 @@ def main() -> None:
         f"activation={gaze_estimator.activation_function}, "
         f"weights={gaze_estimator.weights_path}."
     )
-    calibration_activation = calibration.metadata.get("activation_function")
-    if calibration_activation is None:
-        print(
-            "Warning: calibration.json has no activation metadata. "
-            "Re-run calibration.py for reliable Leaky ReLU calibration."
-        )
-    elif str(calibration_activation) != gaze_estimator.activation_function:
-        raise RuntimeError(
-            "Calibration/model mismatch: "
-            f"calibration was collected with activation={calibration_activation!r}, "
-            f"but demo loaded activation={gaze_estimator.activation_function!r}. "
-            "Re-run calibration.py with the same --activation/--weights settings. "
-            "For standard ReLU, use: calibration.py --activation relu "
-            "--weights GazeEstimation/weights/best.pt --output calibration-relu.json"
-        )
-    calibration_weights = calibration.metadata.get("weights_path")
-    if calibration_weights is not None and Path(calibration_weights) != Path(gaze_estimator.weights_path):
-        print(
-            "Warning: calibration.json was collected with a different weights path: "
-            f"{calibration_weights!r}; demo uses {str(gaze_estimator.weights_path)!r}."
-        )
+    check_calibration_model_match(calibration, gaze_estimator)
 
     cap = cv2.VideoCapture(args.camera)
     if not cap.isOpened():
@@ -261,7 +310,7 @@ def main() -> None:
             try:
                 face_distance_mm = distance_tracker.estimate(frame)
                 result = gaze_estimator.predict(rgb_frame, return_details=True)
-                if not isinstance(result, EstimationResult):
+                if not isinstance(result, RuntimeEstimationResult):
                     raise RuntimeError("Estimator did not return detailed output.")
                 predicted_px = calibration.apply(result.raw_xy, face_distance_mm)
             except (RuntimeError, ValueError) as exc:

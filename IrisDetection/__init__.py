@@ -9,7 +9,7 @@ from urllib.request import urlretrieve
 
 import numpy as np
 from PIL import Image, ImageOps
-from runtime_device import resolve_iris_device_name
+from Env.runtime_device import resolve_iris_device_name
 
 
 MEDIAPIPE_MODEL_URL = (

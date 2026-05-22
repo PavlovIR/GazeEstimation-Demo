@@ -3,11 +3,18 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 import time
+import tomllib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
+
+CALIBRATION_DIR = Path(__file__).resolve().parent
+ROOT = CALIBRATION_DIR.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import cv2
 import numpy as np
@@ -17,14 +24,19 @@ from face_pos.detector import FaceDetector
 from face_pos.estimator import DistanceEstimator
 from gaze_ui.AccuracyUi import set_dpi_awareness
 from gaze_ui.Screen import Screen
-from GazeEstimation import EstimationResult
 from GazeEstimation import Estimator as GazeEstimator
 from IrisDetection import Detector as IrisDetector
+from Env.run_parameters import (
+    DEFAULT_RUN_PARAMETERS_PATH,
+    load_run_parameters,
+    normalize_estimator_lib,
+)
+from Env.runtime_estimator import RuntimeEstimationResult, build_runtime_gaze_estimator
 
-ROOT = Path(__file__).resolve().parent
-DEFAULT_CALIBRATION_PATH = ROOT / "calibration.json"
-DEFAULT_CONFIG_PATH = ROOT / "config.toml"
-DEFAULT_POINTS_PATH = ROOT / "calibration-points.csv"
+DEFAULT_CALIBRATION_PATH = CALIBRATION_DIR / "calibration.json"
+DEFAULT_CALIBRATION_PARAMETERS_PATH = CALIBRATION_DIR / "calibration_parameters.toml"
+DEFAULT_CONFIG_PATH = CALIBRATION_DIR / "config.toml"
+DEFAULT_POINTS_PATH = ROOT / "csv_points" / "calibration-points.csv"
 DEFAULT_MEDIAPIPE_MODEL = ROOT / "models" / "face_landmarker_v2_with_blendshapes.task"
 DEFAULT_IRIS_DATA_DIR = ROOT / "IrisDetection" / "data"
 DEFAULT_ACTIVATION_FUNCTION = "leaky_relu"
@@ -40,6 +52,25 @@ DEFAULT_RELATIVE_POINTS: tuple[tuple[float, float], ...] = (
     (0.50, 0.75),
     (0.75, 0.75),
 )
+
+
+@dataclass(frozen=True, slots=True)
+class CalibrationParameters:
+    estimator_lib: str = "GazeEstimation"
+    activation_function: str = DEFAULT_ACTIVATION_FUNCTION
+    screen_config: Path = DEFAULT_CONFIG_PATH
+    calibration_file: Path = DEFAULT_CALIBRATION_PATH
+    points: Path = DEFAULT_POINTS_PATH
+    weights: Path | None = None
+    camera: int = 0
+    fov_degrees: float = 60.0
+    settle_seconds: float = 0.6
+    sample_seconds: float = 1.2
+    min_frames: int = 4
+    device: str = "auto"
+    iris_device: str = "auto"
+    mediapipe_model: Path = DEFAULT_MEDIAPIPE_MODEL
+    iris_data_dir: Path | None = DEFAULT_IRIS_DATA_DIR
 
 
 @dataclass(frozen=True, slots=True)
@@ -428,6 +459,7 @@ class AdvancedCalibrationPipeline:
         iris_device: str = "auto",
         weights_path: str | Path | None = None,
         activation_function: str = DEFAULT_ACTIVATION_FUNCTION,
+        estimator_lib: str = "GazeEstimation",
     ) -> None:
         self.screen = screen
         self.output_path = Path(output_path)
@@ -442,7 +474,9 @@ class AdvancedCalibrationPipeline:
         self.iris_data_dir = Path(iris_data_dir) if iris_data_dir is not None else None
         self.weights_path = Path(weights_path) if weights_path is not None else None
         self.activation_function = activation_function
-        self.gaze_estimator = build_gaze_estimator(
+        self.gaze_estimator = build_runtime_gaze_estimator(
+            estimator_lib=estimator_lib,
+            screen=screen,
             screen_size=(screen.width_px, screen.height_px),
             mediapipe_model_path=self.mediapipe_model_path,
             iris_data_dir=self.iris_data_dir,
@@ -451,6 +485,7 @@ class AdvancedCalibrationPipeline:
             weights_path=self.weights_path,
             activation_function=self.activation_function,
         )
+        self.estimator_lib = self.gaze_estimator.estimator_lib
         self.activation_function = self.gaze_estimator.activation_function
         self.weights_path = self.gaze_estimator.weights_path
 
@@ -510,6 +545,7 @@ class AdvancedCalibrationPipeline:
             samples=samples,
             screen_size=(self.screen.width_px, self.screen.height_px),
             metadata={
+                "estimator_lib": self.gaze_estimator.estimator_lib,
                 "activation_function": self.gaze_estimator.activation_function,
                 "weights_path": str(self.gaze_estimator.weights_path),
             },
@@ -579,7 +615,7 @@ class AdvancedCalibrationPipeline:
             try:
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 result = self.gaze_estimator.predict(rgb_frame, return_details=True)
-                if not isinstance(result, EstimationResult):
+                if not isinstance(result, RuntimeEstimationResult):
                     raise RuntimeError("Estimator did not return detailed output.")
                 if elapsed >= self.settle_seconds and last_distance is not None:
                     raw_samples.append(result.raw_xy.astype(np.float32))
@@ -721,74 +757,266 @@ def _format_distance(distance_mm: float | None) -> str:
     return f"Face distance: {distance_mm:.0f} mm"
 
 
+def load_calibration_parameters(
+    path: str | Path = DEFAULT_CALIBRATION_PARAMETERS_PATH,
+) -> CalibrationParameters:
+    parameters_path = Path(path)
+    if not parameters_path.exists():
+        return CalibrationParameters()
+
+    with parameters_path.open("rb") as file:
+        payload = tomllib.load(file)
+    if not isinstance(payload, dict):
+        raise ValueError(f"{parameters_path} must contain TOML settings.")
+
+    payload = _flatten_calibration_parameters(payload)
+    return CalibrationParameters(
+        estimator_lib=_string_config(
+            payload,
+            "estimator_lib",
+            aliases=("gaze_estimation_lib", "gaze_estimation_library", "lib"),
+            default="GazeEstimation",
+        ),
+        activation_function=_string_config(
+            payload,
+            "activation_function",
+            aliases=("activation",),
+            default=DEFAULT_ACTIVATION_FUNCTION,
+        ),
+        screen_config=_path_config(
+            payload,
+            "screen_config",
+            aliases=("screen_config_toml", "config", "config_file"),
+            default=DEFAULT_CONFIG_PATH,
+        ),
+        calibration_file=_path_config(
+            payload,
+            "calibration_file",
+            aliases=("output", "output_path", "calibration"),
+            default=DEFAULT_CALIBRATION_PATH,
+        ),
+        points=_path_config(
+            payload,
+            "points",
+            aliases=("calibration_points", "points_file", "points_csv"),
+            default=DEFAULT_POINTS_PATH,
+        ),
+        weights=_optional_path_config(
+            payload,
+            "weights",
+            aliases=("weights_path", "checkpoint"),
+        ),
+        camera=_int_config(payload, "camera", aliases=("camera_index",), default=0),
+        fov_degrees=_float_config(payload, "fov_degrees", aliases=("fov",), default=60.0),
+        settle_seconds=_float_config(payload, "settle_seconds", default=0.6),
+        sample_seconds=_float_config(payload, "sample_seconds", default=1.2),
+        min_frames=_int_config(payload, "min_frames", aliases=("min_frames_per_point",), default=4),
+        device=_string_config(payload, "device", aliases=("model_device",), default="auto"),
+        iris_device=_string_config(payload, "iris_device", default="auto"),
+        mediapipe_model=_path_config(
+            payload,
+            "mediapipe_model",
+            aliases=("mediapipe_model_path", "face_landmarker_model"),
+            default=DEFAULT_MEDIAPIPE_MODEL,
+        ),
+        iris_data_dir=_optional_path_config(
+            payload,
+            "iris_data_dir",
+            default=DEFAULT_IRIS_DATA_DIR,
+        ),
+    )
+
+
+def _flatten_calibration_parameters(payload: dict[str, Any]) -> dict[str, Any]:
+    flattened = {
+        key: value for key, value in payload.items() if not isinstance(value, dict)
+    }
+    for section in (
+        "paths",
+        "estimator",
+        "model",
+        "gaze_estimation",
+        "calibration",
+        "capture",
+        "timing",
+        "devices",
+        "assets",
+    ):
+        value = payload.get(section)
+        if isinstance(value, dict):
+            flattened.update(value)
+    return flattened
+
+
+def _string_config(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    aliases: tuple[str, ...] = (),
+    default: str,
+) -> str:
+    value = _first_config_value(payload, (key, *aliases), default)
+    if not isinstance(value, str):
+        raise TypeError(f"{key} must be a string.")
+    value = value.strip()
+    return default if value == "" else value
+
+
+def _path_config(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    aliases: tuple[str, ...] = (),
+    default: Path,
+) -> Path:
+    value = _first_config_value(payload, (key, *aliases), str(default))
+    if not isinstance(value, str):
+        raise TypeError(f"{key} must be a path string.")
+    return _resolve_config_path(value)
+
+
+def _optional_path_config(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    aliases: tuple[str, ...] = (),
+    default: Path | None = None,
+) -> Path | None:
+    value = _first_config_value(
+        payload,
+        (key, *aliases),
+        None if default is None else str(default),
+    )
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"{key} must be a path string.")
+    value = value.strip()
+    if value == "":
+        return None
+    return _resolve_config_path(value)
+
+
+def _int_config(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    aliases: tuple[str, ...] = (),
+    default: int,
+) -> int:
+    value = _first_config_value(payload, (key, *aliases), default)
+    if not isinstance(value, int):
+        raise TypeError(f"{key} must be an integer.")
+    return value
+
+
+def _float_config(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    aliases: tuple[str, ...] = (),
+    default: float,
+) -> float:
+    value = _first_config_value(payload, (key, *aliases), default)
+    if not isinstance(value, (int, float)):
+        raise TypeError(f"{key} must be a number.")
+    return float(value)
+
+
+def _first_config_value(
+    payload: dict[str, Any],
+    keys: tuple[str, ...],
+    default: Any,
+) -> Any:
+    for key in keys:
+        if key in payload:
+            return payload[key]
+    return default
+
+
+def _resolve_config_path(value: str) -> Path:
+    path = Path(value.strip()).expanduser()
+    if path.is_absolute():
+        return path
+    return ROOT / path
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Collect distance-aware ANN gaze calibration."
+        description="Collect distance-aware gaze calibration."
     )
     parser.add_argument(
-        "--screen-config", default=str(DEFAULT_CONFIG_PATH), help="Path to config.toml."
+        "--calibration-parameters",
+        default=str(DEFAULT_CALIBRATION_PARAMETERS_PATH),
+        help="Path to calibration_parameters.toml.",
+    )
+    parser.add_argument(
+        "--run-parameters",
+        help="Optional shared run_parameters.toml fallback.",
+    )
+    parser.add_argument(
+        "--estimator-lib",
+        help="Estimator library backend. Overrides calibration_parameters.toml.",
+    )
+    parser.add_argument(
+        "--screen-config", help="Path to config.toml. Overrides calibration_parameters.toml."
     )
     parser.add_argument(
         "--output",
-        default=str(DEFAULT_CALIBRATION_PATH),
-        help="Calibration JSON output path.",
+        help="Calibration JSON output path. Overrides calibration_parameters.toml.",
     )
     parser.add_argument(
         "--points",
-        default=str(DEFAULT_POINTS_PATH),
-        help="CSV containing x,y target points.",
+        help="CSV containing x,y target points. Overrides calibration_parameters.toml.",
     )
-    parser.add_argument("--camera", type=int, default=0, help="Webcam index.")
+    parser.add_argument("--camera", type=int, help="Webcam index.")
     parser.add_argument(
         "--fov-degrees",
         type=float,
-        default=60.0,
         help="Approximate webcam horizontal FOV.",
     )
     parser.add_argument(
         "--settle-seconds",
         type=float,
-        default=0.6,
         help="Delay before sampling each target.",
     )
     parser.add_argument(
         "--sample-seconds",
         type=float,
-        default=1.2,
         help="Sampling duration per target.",
     )
     parser.add_argument(
-        "--min-frames", type=int, default=4, help="Minimum valid frames per target."
+        "--min-frames", type=int, help="Minimum valid frames per target."
     )
     parser.add_argument(
-        "--device", default="auto", help="ANN model device: auto, cpu, cuda, etc."
+        "--device", help="Model device: auto, cpu, cuda, etc."
     )
     parser.add_argument(
         "--iris-device",
-        default="auto",
         help="Iris detector device: auto, cpu, cuda, mps, etc.",
     )
     parser.add_argument(
         "--weights",
         help=(
-            "Path to ANN checkpoint. If omitted, Estimator picks the default checkpoint "
-            "for --activation."
+            "Path to estimator checkpoint. If omitted, the selected backend picks "
+            "its default checkpoint."
         ),
     )
     parser.add_argument(
         "--activation",
-        default=DEFAULT_ACTIVATION_FUNCTION,
+        default=None,
         choices=("relu", "leaky_relu"),
-        help="Model activation variant to use for collecting calibration samples.",
+        help=(
+            "Model activation variant to use for collecting calibration samples. "
+            "Used by GazeEstimation and ignored by GazeCaptureEstimator."
+        ),
     )
     parser.add_argument(
         "--mediapipe-model",
-        default=str(DEFAULT_MEDIAPIPE_MODEL),
         help="Face landmarker model path.",
     )
     parser.add_argument(
         "--iris-data-dir",
-        default=str(DEFAULT_IRIS_DATA_DIR),
         help="Iris data directory.",
     )
     return parser.parse_args()
@@ -796,22 +1024,83 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    screen = Screen(args.screen_config)
+    calibration_parameters = load_calibration_parameters(args.calibration_parameters)
+    run_parameters = (
+        load_run_parameters(args.run_parameters) if args.run_parameters is not None else None
+    )
+    estimator_lib = normalize_estimator_lib(
+        args.estimator_lib
+        or calibration_parameters.estimator_lib
+        or (run_parameters.estimator_lib if run_parameters is not None else "GazeEstimation")
+    )
+    screen_config = (
+        Path(args.screen_config)
+        if args.screen_config is not None
+        else calibration_parameters.screen_config
+    )
+    output_path = (
+        Path(args.output)
+        if args.output is not None
+        else calibration_parameters.calibration_file
+    )
+    points_path = (
+        Path(args.points) if args.points is not None else calibration_parameters.points
+    )
+    weights_path = (
+        args.weights
+        or calibration_parameters.weights
+        or (run_parameters.weights if run_parameters is not None else None)
+    )
+    activation_function = (
+        args.activation
+        or calibration_parameters.activation_function
+        or (run_parameters.activation_function if run_parameters is not None else None)
+        or DEFAULT_ACTIVATION_FUNCTION
+    )
+    mediapipe_model = (
+        Path(args.mediapipe_model)
+        if args.mediapipe_model is not None
+        else calibration_parameters.mediapipe_model
+    )
+    iris_data_dir = (
+        Path(args.iris_data_dir)
+        if args.iris_data_dir is not None
+        else calibration_parameters.iris_data_dir
+    )
+
+    screen = Screen(str(screen_config))
     pipeline = AdvancedCalibrationPipeline(
         screen=screen,
-        output_path=args.output,
-        points_path=args.points,
-        camera_index=args.camera,
-        fov_degrees=args.fov_degrees,
-        settle_seconds=args.settle_seconds,
-        sample_seconds=args.sample_seconds,
-        min_frames_per_point=args.min_frames,
-        mediapipe_model_path=args.mediapipe_model,
-        iris_data_dir=args.iris_data_dir,
-        model_device=args.device,
-        iris_device=args.iris_device,
-        weights_path=args.weights,
-        activation_function=args.activation,
+        output_path=output_path,
+        points_path=points_path,
+        camera_index=args.camera if args.camera is not None else calibration_parameters.camera,
+        fov_degrees=(
+            args.fov_degrees
+            if args.fov_degrees is not None
+            else calibration_parameters.fov_degrees
+        ),
+        settle_seconds=(
+            args.settle_seconds
+            if args.settle_seconds is not None
+            else calibration_parameters.settle_seconds
+        ),
+        sample_seconds=(
+            args.sample_seconds
+            if args.sample_seconds is not None
+            else calibration_parameters.sample_seconds
+        ),
+        min_frames_per_point=(
+            args.min_frames
+            if args.min_frames is not None
+            else calibration_parameters.min_frames
+        ),
+        mediapipe_model_path=mediapipe_model,
+        iris_data_dir=iris_data_dir,
+        model_device=args.device or calibration_parameters.device,
+        iris_device=args.iris_device or calibration_parameters.iris_device,
+        weights_path=weights_path,
+        activation_function=activation_function,
+        estimator_lib=estimator_lib,
     )
     try:
         calibration = pipeline.run()
@@ -819,7 +1108,7 @@ def main() -> None:
         print("Calibration aborted.")
         return
 
-    print(f"Saved calibration to {Path(args.output).resolve()}")
+    print(f"Saved calibration to {output_path.resolve()}")
     for item in calibration.bins:
         print(f"{item.stage}: {item.distance_mm:.0f} mm, {item.sample_count} samples")
 

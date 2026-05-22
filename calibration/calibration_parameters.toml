@@ -1,0 +1,34 @@
+# Calibration-specific profile used by calibration/calibration.py.
+# CLI flags still override these values.
+
+[calibration]
+screen_config = "calibration/config.toml"
+calibration_file = "calibration/calibration_MPIIGaze.json"
+points = "csv_points/calibration-points.csv"
+
+# Use "GazeEstimation" or "GazeCaptureEstimator".
+estimator_lib = "GazeEstimation"
+
+# Used by GazeEstimation. Ignored by GazeCaptureEstimator.
+activation_function = "relu"
+
+# Optional checkpoint override. Leave empty to use the default checkpoint
+# for estimator_lib + activation_function.
+weights = "GazeEstimation/weights/gazecapture_lg00/best.pt"
+
+[capture]
+camera = 0
+fov_degrees = 60.0
+
+[timing]
+settle_seconds = 0.6
+sample_seconds = 1.2
+min_frames = 4
+
+[devices]
+device = "auto"
+iris_device = "auto"
+
+[assets]
+mediapipe_model = "models/face_landmarker_v2_with_blendshapes.task"
+iris_data_dir = "IrisDetection/data"
