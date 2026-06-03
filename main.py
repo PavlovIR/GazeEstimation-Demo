@@ -260,6 +260,12 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help="Iris detector device: auto, cpu, cuda, mps, etc.",
     )
+    parser.add_argument(
+        "--fov-degrees",
+        type=float,
+        default=60.0,
+        help="Approximate webcam horizontal FOV.",
+    )
     return parser.parse_args()
 
 
@@ -298,6 +304,7 @@ def main() -> None:
         iris_device=args.iris_device,
         mediapipe_model_path=DEFAULT_MEDIAPIPE_MODEL,
         iris_data_dir=DEFAULT_IRIS_DATA_DIR,
+        fov_degrees=args.fov_degrees,
     )
     print(
         "Loaded gaze model "
@@ -358,6 +365,7 @@ def main() -> None:
                         width=width,
                         height=height,
                         mediapipe_model_path=DEFAULT_MEDIAPIPE_MODEL,
+                        fov_degrees=args.fov_degrees,
                     )
                 except Exception as exc:
                     distance_tracker_failed = True

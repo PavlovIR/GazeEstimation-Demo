@@ -7,10 +7,10 @@ estimator_lib = "GazeEstimation"
 # Used by GazeEstimation. Ignored by GazeCaptureEstimator.
 activation_function = "relu"
 screen_config = "calibration/config.toml"
-calibration_file = "calibration/calibration_MPIIGaze.json"
+calibration_file = "calibration/calibration_parks.json"
 
 # Optional checkpoint override. Leave this commented to use the default checkpoint:
 # - GazeEstimation: default checkpoint for activation_function
 # - GazeCaptureEstimator: GazeCaptureEstimator/checkpoint.pth.tar
 # weights = "GazeCaptureEstimator/checkpoint.pth.tar"
-weights = "GazeEstimation/weights/gazecapture_lg00/best.pt"
+weights = "GazeEstimation/weights/parks.pt"

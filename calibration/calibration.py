@@ -484,6 +484,7 @@ class AdvancedCalibrationPipeline:
             iris_device=iris_device,
             weights_path=self.weights_path,
             activation_function=self.activation_function,
+            fov_degrees=self.fov_degrees,
         )
         self.estimator_lib = self.gaze_estimator.estimator_lib
         self.activation_function = self.gaze_estimator.activation_function
@@ -548,10 +549,21 @@ class AdvancedCalibrationPipeline:
                 "estimator_lib": self.gaze_estimator.estimator_lib,
                 "activation_function": self.gaze_estimator.activation_function,
                 "weights_path": str(self.gaze_estimator.weights_path),
+                "use_gaze_normalization": bool(
+                    getattr(self.gaze_estimator, "use_gaze_normalization", False)
+                ),
+                "prediction_space": self._prediction_space_metadata(),
             },
         )
         calibration.save(self.output_path)
         return calibration
+
+    def _prediction_space_metadata(self) -> str:
+        if getattr(self.gaze_estimator, "use_gaze_normalization", False):
+            return "display_px_from_normalized_pitchyaw"
+        if self.gaze_estimator.estimator_lib == "GazeCaptureEstimator":
+            return "display_px_from_camera_cm"
+        return "model_xy"
 
     def _wait_for_stage_start(
         self,

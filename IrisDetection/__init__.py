@@ -87,11 +87,20 @@ def load_rgb_image(path: str | Path) -> np.ndarray:
     return np.asarray(Image.open(path).convert("RGB"))
 
 
-def _resize_image(image: np.ndarray, size: int) -> np.ndarray:
-    return np.asarray(Image.fromarray(image).resize((size, size), Image.Resampling.BILINEAR))
+def _image_size_hw(size: int | tuple[int, int] | list[int]) -> tuple[int, int]:
+    if isinstance(size, int):
+        return size, size
+    if len(size) != 2:
+        raise ValueError("Image size must be an int or a two-item [height, width] pair.")
+    return int(size[0]), int(size[1])
 
 
-def _crop_image(image: np.ndarray, box: BoundingBox, size: int) -> np.ndarray:
+def _resize_image(image: np.ndarray, size: int | tuple[int, int] | list[int]) -> np.ndarray:
+    height, width = _image_size_hw(size)
+    return np.asarray(Image.fromarray(image).resize((width, height), Image.Resampling.BILINEAR))
+
+
+def _crop_image(image: np.ndarray, box: BoundingBox, size: int | tuple[int, int] | list[int]) -> np.ndarray:
     x1, y1, x2, y2 = box.to_int_xyxy()
     cropped = image[y1:y2, x1:x2]
     if cropped.size == 0:
@@ -142,9 +151,10 @@ def _horizontal_flip_box(box: BoundingBox, canvas_width: int) -> BoundingBox:
     )
 
 
-def _project_box_from_crop(box: BoundingBox, crop_box: BoundingBox, crop_size: int) -> BoundingBox:
-    scale_x = crop_box.width / max(crop_size, 1)
-    scale_y = crop_box.height / max(crop_size, 1)
+def _project_box_from_crop(box: BoundingBox, crop_box: BoundingBox, crop_size: int | tuple[int, int] | list[int]) -> BoundingBox:
+    crop_height, crop_width = _image_size_hw(crop_size)
+    scale_x = crop_box.width / max(crop_width, 1)
+    scale_y = crop_box.height / max(crop_height, 1)
     return BoundingBox(
         x=crop_box.x + (box.x * scale_x),
         y=crop_box.y + (box.y * scale_y),
@@ -153,16 +163,17 @@ def _project_box_from_crop(box: BoundingBox, crop_box: BoundingBox, crop_size: i
     )
 
 
-def _project_points_to_crop(points: np.ndarray, crop_box: BoundingBox, crop_size: int) -> np.ndarray:
-    scale_x = crop_size / max(crop_box.width, 1.0)
-    scale_y = crop_size / max(crop_box.height, 1.0)
+def _project_points_to_crop(points: np.ndarray, crop_box: BoundingBox, crop_size: int | tuple[int, int] | list[int]) -> np.ndarray:
+    crop_height, crop_width = _image_size_hw(crop_size)
+    scale_x = crop_width / max(crop_box.width, 1.0)
+    scale_y = crop_height / max(crop_box.height, 1.0)
     projected = np.empty_like(points, dtype=np.float32)
     projected[:, 0] = (points[:, 0] - crop_box.x) * scale_x
     projected[:, 1] = (points[:, 1] - crop_box.y) * scale_y
     if points.shape[1] > 2:
         projected[:, 2:] = points[:, 2:]
-    projected[:, 0] = np.clip(projected[:, 0], 0.0, float(crop_size - 1))
-    projected[:, 1] = np.clip(projected[:, 1], 0.0, float(crop_size - 1))
+    projected[:, 0] = np.clip(projected[:, 0], 0.0, float(crop_width - 1))
+    projected[:, 1] = np.clip(projected[:, 1], 0.0, float(crop_height - 1))
     return projected
 
 
@@ -207,8 +218,8 @@ class Detector:
         iris_data_dir: str | Path | None = None,
         device: str = "auto",
         download_mediapipe_model: bool = True,
-        face_crop_size: int = 224,
-        eye_crop_size: int = 96,
+        face_crop_size: int | tuple[int, int] | list[int] = 224,
+        eye_crop_size: int | tuple[int, int] | list[int] = 96,
         face_grid_size: tuple[int, int] = (50, 50),
         iris_grid_size: tuple[int, int] = (10, 5),
         face_box_margin: float = 0.15,
@@ -235,7 +246,8 @@ class Detector:
         self._face_detector = None
         self._mp = None
         self._iris_model = None
-        self._use_mediapipe_iris = False
+        eye_height, eye_width = _image_size_hw(self.eye_crop_size)
+        self._use_mediapipe_iris = eye_height != eye_width
 
         if self.iris_data_dir is not None:
             os.environ["IRISLIBS_DATA_DIR"] = str(self.iris_data_dir)
@@ -425,8 +437,9 @@ class Detector:
         left_iris_box_image = _project_box_from_crop(left_iris_box_eye, crop_box=left_eye_box, crop_size=self.eye_crop_size)
         right_iris_box_image = _project_box_from_crop(right_iris_box_eye, crop_box=right_eye_box, crop_size=self.eye_crop_size)
 
+        eye_crop_height, eye_crop_width = _image_size_hw(self.eye_crop_size)
         canonical_right_eye = _flip_horizontal(right_eye_crop)
-        canonical_right_iris_box = _horizontal_flip_box(right_iris_box_eye, canvas_width=self.eye_crop_size)
+        canonical_right_iris_box = _horizontal_flip_box(right_iris_box_eye, canvas_width=eye_crop_width)
 
         face_grid = _rasterize_box_to_grid(
             face_box,
@@ -437,15 +450,15 @@ class Detector:
         )
         left_iris_grid = _rasterize_box_to_grid(
             left_iris_box_eye,
-            canvas_width=self.eye_crop_size,
-            canvas_height=self.eye_crop_size,
+            canvas_width=eye_crop_width,
+            canvas_height=eye_crop_height,
             grid_width=self.iris_grid_size[0],
             grid_height=self.iris_grid_size[1],
         )
         right_iris_grid = _rasterize_box_to_grid(
             canonical_right_iris_box,
-            canvas_width=self.eye_crop_size,
-            canvas_height=self.eye_crop_size,
+            canvas_width=eye_crop_width,
+            canvas_height=eye_crop_height,
             grid_width=self.iris_grid_size[0],
             grid_height=self.iris_grid_size[1],
         )

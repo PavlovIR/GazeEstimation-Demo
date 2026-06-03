@@ -3,7 +3,7 @@
 
 [calibration]
 screen_config = "calibration/config.toml"
-calibration_file = "calibration/calibration_MPIIGaze.json"
+calibration_file = "calibration/calibration_parks.json"
 points = "csv_points/calibration-points.csv"
 
 # Use "GazeEstimation" or "GazeCaptureEstimator".
@@ -14,7 +14,7 @@ activation_function = "relu"
 
 # Optional checkpoint override. Leave empty to use the default checkpoint
 # for estimator_lib + activation_function.
-weights = "GazeEstimation/weights/gazecapture_lg00/best.pt"
+weights = "GazeEstimation/weights/parks.pt"
 
 [capture]
 camera = 0

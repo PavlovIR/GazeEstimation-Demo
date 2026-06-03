@@ -45,6 +45,7 @@ class AnnRuntimeEstimator:
     def __init__(
         self,
         *,
+        screen: Screen | None,
         screen_size: tuple[int, int] | None,
         weights_path: str | Path | None,
         activation_function: str,
@@ -52,6 +53,7 @@ class AnnRuntimeEstimator:
         iris_device: str,
         mediapipe_model_path: str | Path,
         iris_data_dir: str | Path | None,
+        fov_degrees: float = 60.0,
     ) -> None:
         iris_detector = IrisDetector(
             mediapipe_model_path=_optional_path(Path(mediapipe_model_path)),
@@ -63,9 +65,11 @@ class AnnRuntimeEstimator:
         self._estimator = AnnEstimator(
             IrisDetector=iris_detector,
             weights_path=weights_path,
+            screen=screen,
             screen_size=screen_size,
             device=model_device,
             activation_function=activation_function,
+            fov_degrees=fov_degrees,
         )
 
     @property
@@ -75,6 +79,10 @@ class AnnRuntimeEstimator:
     @property
     def weights_path(self) -> Path:
         return self._estimator.weights_path
+
+    @property
+    def use_gaze_normalization(self) -> bool:
+        return bool(getattr(self._estimator, "use_gaze_normalization", False))
 
     def predict(
         self, image: str | Path | np.ndarray, return_details: bool = False
@@ -94,6 +102,7 @@ class AnnRuntimeEstimator:
 class GazeCaptureRuntimeEstimator:
     estimator_lib = "GazeCaptureEstimator"
     activation_function = "n/a"
+    use_gaze_normalization = False
 
     def __init__(
         self,
@@ -195,6 +204,7 @@ def build_runtime_gaze_estimator(
     iris_device: str,
     mediapipe_model_path: str | Path,
     iris_data_dir: str | Path | None,
+    fov_degrees: float = 60.0,
 ) -> AnnRuntimeEstimator | GazeCaptureRuntimeEstimator:
     estimator_lib = normalize_estimator_lib(estimator_lib)
     if estimator_lib == "GazeCaptureEstimator":
@@ -208,6 +218,7 @@ def build_runtime_gaze_estimator(
         )
 
     return AnnRuntimeEstimator(
+        screen=screen,
         screen_size=screen_size,
         weights_path=weights_path,
         activation_function=activation_function,
@@ -215,6 +226,7 @@ def build_runtime_gaze_estimator(
         iris_device=iris_device,
         mediapipe_model_path=mediapipe_model_path,
         iris_data_dir=iris_data_dir,
+        fov_degrees=fov_degrees,
     )
 
 

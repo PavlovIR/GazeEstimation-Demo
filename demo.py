@@ -255,6 +255,7 @@ def main() -> None:
         iris_device=args.iris_device,
         mediapipe_model_path=DEFAULT_MEDIAPIPE_MODEL,
         iris_data_dir=DEFAULT_IRIS_DATA_DIR,
+        fov_degrees=args.fov_degrees,
     )
     print(
         "Loaded gaze model "
